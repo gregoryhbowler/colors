@@ -1,9 +1,9 @@
 // Polyphonic Engine Wrapper
 // Wraps any synth engine for polyphonic voice management
 
-import { HoneySynth } from './engines/honey-engine.js';
-import { VinegarSynth } from './engines/vinegar-engine.js';
-import { MollySynth } from './engines/molly-engine.js';
+import { HoneySynth } from './honey-engine.js';
+import { VinegarSynth } from './vinegar-engine.js';
+import { MollySynth } from './molly-engine.js';
 import { midiToFreq } from './harmony.js';
 
 /**
