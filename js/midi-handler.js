@@ -124,18 +124,26 @@ export class MIDIHandler {
     /**
      * Handle note on (pad press)
      */
-    handleNoteOn(note, velocity) {
-        // Map MIDI note to pad index
-        const padIndex = note - this.padNoteOffset;
-        
-        console.log(`MIDI Note On: ${note} -> Pad ${padIndex} (vel: ${velocity.toFixed(2)})`);
-        
-        if (padIndex >= 0 && padIndex < this.padCount) {
-            if (this.onPadOn) {
-                this.onPadOn(padIndex, velocity);
-            }
+   handleNoteOn(note, velocity) {
+    // Just validate the note is in our expected range
+    const padIndex = note - this.padNoteOffset;
+    
+    if (padIndex >= 0 && padIndex < this.padCount) {
+        if (this.onPadOn) {
+            this.onPadOn(note, velocity);  // Pass raw MIDI note, not padIndex
         }
     }
+}
+
+handleNoteOff(note) {
+    const padIndex = note - this.padNoteOffset;
+    
+    if (padIndex >= 0 && padIndex < this.padCount) {
+        if (this.onPadOff) {
+            this.onPadOff(note);  // Pass raw MIDI note, not padIndex
+        }
+    }
+}
     
     /**
      * Handle note off (pad release)
