@@ -1,8 +1,8 @@
 // Alice Coltrane Style — Cascading Harp/Piano Runs
 // Multi-bar flowing cascades with quartal/quintal voicings and modal runs
 
-import { StyleGenerator } from './style-generator.js';
-import { Gesture, GestureEvent, SeededRandom } from './gesture-core.js';
+import { StyleGenerator } from '../style-generator.js';
+import { Gesture, GestureEvent, SeededRandom } from '../gesture-core.js';
 
 export class AliceCascadeGenerator extends StyleGenerator {
     constructor() {
