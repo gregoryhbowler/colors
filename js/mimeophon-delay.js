@@ -10,11 +10,11 @@ export class MimeophonDelay {
         this.output = ctx.createGain();
         this.output.gain.value = 1.0;
         
-        // Wet/Dry
+        // Wet/Dry - FIXED: Set to 100% wet for send/return usage
         this.wet = ctx.createGain();
         this.dry = ctx.createGain();
-        this.wet.gain.value = 0;
-        this.dry.gain.value = 1;
+        this.wet.gain.value = 1.0;  // Output only wet signal
+        this.dry.gain.value = 0;     // No dry signal (handled by main mix)
         
         // Stereo delay lines
         this.delayL = ctx.createDelay(5);
