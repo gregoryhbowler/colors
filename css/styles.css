@@ -345,21 +345,40 @@ body {
     font-size: 1rem;
 }
 
-.mode-badge {
-    display: inline-flex;
-    align-items: center;
+.mode-toggle {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
     gap: var(--space-xs);
-    padding: 6px 10px;
-    border-radius: var(--radius-sm);
-    background: linear-gradient(135deg, rgba(232, 213, 232, 0.8), rgba(212, 247, 232, 0.8));
-    color: var(--text-primary);
-    font-size: 0.7rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    width: fit-content;
-    margin-bottom: var(--space-sm);
+    margin-bottom: var(--space-xs);
+}
+
+.mode-btn {
     border: 1px solid var(--border-light);
+    background: rgba(255, 255, 255, 0.75);
+    color: var(--text-primary);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    border-radius: var(--radius-sm);
+    padding: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.mode-btn.active {
+    background: linear-gradient(135deg, rgba(232, 213, 232, 0.9), rgba(212, 247, 232, 0.9));
+    border-color: rgba(0, 0, 0, 0.06);
     box-shadow: var(--shadow-lifted);
+}
+
+.mode-btn:hover {
+    transform: translateY(-1px);
+}
+
+.mode-hint {
+    margin: 0 0 var(--space-sm);
+    font-size: 0.8rem;
+    color: rgba(17, 24, 39, 0.7);
 }
 
 .evolve-btn {

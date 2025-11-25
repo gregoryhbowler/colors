@@ -7,6 +7,7 @@ import { EventGesturePlayer } from './event-gesture-player.js';
 import { MimeophonDelay } from './mimeophon-delay.js';
 import { MIDIHandler, KeyboardHandler } from './midi-handler.js';
 import { WAVRecorder } from './recorder.js';
+import { NOTE_NAMES, quantizeToScale } from './harmony.js';
 
 class GestaltApp {
     constructor() {
@@ -23,6 +24,9 @@ class GestaltApp {
         this.isInitialized = false;
         this.isGridVisible = false;
         this.lastRecordingBlob = null;
+        this.actionMode = 'motif';
+        this.activeNotesBySlot = new Map();
+        this.gridStartSlot = 48;
         
         // UI element references
         this.elements = {};
@@ -55,8 +59,10 @@ class GestaltApp {
             // Tempo
             tempo: document.getElementById('tempo'),
             tempoValue: document.getElementById('tempoValue'),
-            
+
             // Actions
+            actionModeBtns: document.querySelectorAll('.mode-btn'),
+            actionModeHint: document.getElementById('actionModeHint'),
             regenerateGestures: document.getElementById('regenerateGestures'),
             evolveMotif: document.getElementById('evolveMotif'),
             toggleGrid: document.getElementById('toggleGrid'),
@@ -225,7 +231,14 @@ class GestaltApp {
                 this.palette.setTempo(value);
             }
         });
-        
+
+        // Mode switching
+        this.elements.actionModeBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.setActionMode(btn.dataset.mode);
+            });
+        });
+
         // Regenerate grid
         this.elements.regenerateGestures.addEventListener('click', () => {
             console.log('[GestaltApp] Regenerate button clicked');
@@ -349,6 +362,30 @@ class GestaltApp {
             }
         });
     }
+
+    /**
+     * Toggle action mode between motif (gestures) and musician (quantized notes)
+     */
+    setActionMode(mode) {
+        if (!['motif', 'musician'].includes(mode) || mode === this.actionMode) return;
+
+        this.actionMode = mode;
+
+        this.elements.actionModeBtns.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.mode === mode);
+        });
+
+        if (mode === 'musician') {
+            this.elements.actionModeHint.textContent = 'Generate a patch and play the keyboard quantized to the selected scale.';
+            this.engine?.allNotesOff();
+            this.activeNotesBySlot.clear();
+        } else {
+            this.elements.actionModeHint.textContent = 'Generate and evolve gestural motifs on the grid.';
+        }
+
+        this.buildPadGrid();
+        this.updateActiveGestureDisplay(null);
+    }
     
     /**
      * Select synth engine
@@ -388,14 +425,72 @@ class GestaltApp {
      */
     updateHarmony() {
         if (!this.palette) return;
-        
+
         const root = this.elements.rootNote.value;
         const scale = this.elements.scaleMode.value;
         
         console.log(`[GestaltApp] Updating harmony: ${root} ${scale}`);
-        
+
         this.palette.setHarmony(root, scale);
         this.buildPadGrid();
+    }
+
+    /**
+     * Normalize an incoming pad or MIDI note to the active grid slot
+     */
+    normalizeSlotId(slotId) {
+        const midiOffset = this.midiHandler?.padNoteOffset ?? 33;
+        const padCount = this.midiHandler?.padCount ?? 32;
+
+        // If we received a MIDI note in the pad range, map it to our grid window
+        if (slotId >= midiOffset && slotId < midiOffset + padCount) {
+            return this.gridStartSlot + (slotId - midiOffset);
+        }
+
+        // If we received a raw pad index (from keyboard handler), map directly
+        if (slotId >= 0 && slotId < padCount) {
+            return this.gridStartSlot + slotId;
+        }
+
+        return slotId;
+    }
+
+    /**
+     * Quantize an incoming slot/pad note to the current scale
+     */
+    quantizeSlot(slotId) {
+        return quantizeToScale(slotId, this.elements.rootNote.value, this.elements.scaleMode.value);
+    }
+
+    /**
+     * Get a label for the current scale (e.g. "C Major")
+     */
+    getScaleLabel() {
+        const root = this.elements.rootNote.value;
+        const scaleOption = this.elements.scaleMode.options[this.elements.scaleMode.selectedIndex];
+        return `${root} ${scaleOption?.textContent || this.elements.scaleMode.value}`;
+    }
+
+    /**
+     * Convert MIDI note number to note name + octave
+     */
+    getNoteName(midiNote) {
+        const noteName = NOTE_NAMES[midiNote % 12] || '?';
+        const octave = Math.floor(midiNote / 12) - 1;
+        return `${noteName}${octave}`;
+    }
+
+    /**
+     * Update the active display for musician mode
+     */
+    updateMusicianDisplay(midiNote) {
+        const noteName = this.getNoteName(midiNote);
+        const scaleLabel = this.getScaleLabel();
+
+        this.elements.activeGestureInfo.innerHTML = `
+            <span class="gesture-type">NOTE</span>
+            <span class="gesture-notes">${noteName} • Quantized to ${scaleLabel}</span>
+        `;
     }
     
     /**
@@ -419,9 +514,9 @@ class GestaltApp {
         console.log('[GestaltApp] Building pad grid...');
         
         this.elements.padGrid.innerHTML = '';
-        
+
         // Show 32 pads starting from slot 48 (C3)
-        const startSlot = 48;
+        const startSlot = this.gridStartSlot;
         
         // Create 32 pads (4 rows x 8 columns)
         for (let row = 3; row >= 0; row--) {
@@ -444,7 +539,12 @@ class GestaltApp {
 
                 const typeLabel = document.createElement('span');
                 typeLabel.className = 'pad-type';
-                typeLabel.textContent = gesture && config ? gesture.typeId : 'EMPTY';
+                if (this.actionMode === 'musician') {
+                    const quantizedNote = this.quantizeSlot(slotId);
+                    typeLabel.textContent = this.getNoteName(quantizedNote);
+                } else {
+                    typeLabel.textContent = gesture && config ? gesture.typeId : 'EMPTY';
+                }
 
                 const lockBtn = document.createElement('button');
                 lockBtn.className = 'pad-lock-btn';
@@ -467,7 +567,12 @@ class GestaltApp {
 
                 const chordLabel = document.createElement('span');
                 chordLabel.className = 'pad-chord';
-                chordLabel.textContent = gesture && config ? (gesture.display || '—') : '—';
+                if (this.actionMode === 'musician') {
+                    const quantizedNote = this.quantizeSlot(slotId);
+                    chordLabel.textContent = `Quantized • ${this.getScaleLabel()}`;
+                } else {
+                    chordLabel.textContent = gesture && config ? (gesture.display || '—') : '—';
+                }
 
                 pad.appendChild(padHeader);
                 pad.appendChild(chordLabel);
@@ -510,28 +615,42 @@ class GestaltApp {
      */
     handlePadOn(slotId, velocity) {
         console.log(`[GestaltApp] handlePadOn(slot ${slotId}, ${velocity})`);
-        
+
+        const resolvedSlot = this.normalizeSlotId(slotId);
+
         if (!this.isInitialized) {
             console.log('[GestaltApp] Not initialized, initializing first...');
-            this.init().then(() => this.handlePadOn(slotId, velocity));
+            this.init().then(() => this.handlePadOn(resolvedSlot, velocity));
             return;
         }
-        
+
+        if (this.actionMode === 'musician') {
+            if (!this.engine) return;
+
+            const quantizedNote = this.quantizeSlot(resolvedSlot);
+            this.activeNotesBySlot.set(resolvedSlot, quantizedNote);
+            this.engine.noteOn(quantizedNote, velocity || 1);
+
+            this.updateActivePad(resolvedSlot, true);
+            this.updateMusicianDisplay(quantizedNote);
+            return;
+        }
+
         if (!this.player) {
             console.error('[GestaltApp] No player!');
             return;
         }
         
         // Trigger gesture for slot as a one-shot (no looping)
-        const result = this.player.triggerSlot(slotId, velocity, { forceOneShot: true });
+        const result = this.player.triggerSlot(resolvedSlot, velocity, { forceOneShot: true });
 
         if (!result?.gesture) {
-            console.error(`[GestaltApp] No gesture returned for slot ${slotId}`);
+            console.error(`[GestaltApp] No gesture returned for slot ${resolvedSlot}`);
             return;
         }
 
         // Update UI
-        this.updateActivePad(slotId, true);
+        this.updateActivePad(resolvedSlot, true);
         this.updateActiveGestureDisplay(result.gesture, result.isLooping);
         
         // Flash MIDI indicator
@@ -547,11 +666,28 @@ class GestaltApp {
      * Handle pad off (release)
      */
     handlePadOff(slotId) {
+        const resolvedSlot = this.normalizeSlotId(slotId);
+
+        if (this.actionMode === 'musician') {
+            const note = this.activeNotesBySlot.get(resolvedSlot);
+            if (note !== undefined && this.engine) {
+                this.engine.noteOff(note);
+            }
+
+            this.activeNotesBySlot.delete(resolvedSlot);
+            this.updateActivePad(resolvedSlot, false);
+
+            if (this.activeNotesBySlot.size === 0) {
+                this.updateActiveGestureDisplay(null);
+            }
+            return;
+        }
+
         if (!this.player) return;
-        
-        this.player.releaseSlot(slotId);
-        this.updateActivePad(slotId, false);
-        
+
+        this.player.releaseSlot(resolvedSlot);
+        this.updateActivePad(resolvedSlot, false);
+
         // Clear gesture display if no pads active
         if (this.player.getActiveGestureCount() === 0) {
             this.updateActiveGestureDisplay(null);
