@@ -212,7 +212,8 @@ class GestaltApp {
         
         // Synth parameters panel
         this.synthParamsVisible = false;
-        this.currentEngineType = 'honey';
+        this.currentEngineType = 'honey';  // Track current engine
+        this.lastDisplayedEngine = null;   // Track last displayed for rebuilding
         this.synthParamListeners = new Map();
         
         // UI element references
@@ -413,7 +414,16 @@ class GestaltApp {
         this.elements.randomizePatch.addEventListener('click', () => {
             if (this.engine) {
                 this.engine.randomPatch();
-                this.updateSynthParamDisplays();
+                console.log('[GestaltApp] Patch randomized');
+                
+                // Update param displays if panel is visible
+                if (this.synthParamsVisible) {
+                    // Add small delay to ensure patch is applied
+                    setTimeout(() => {
+                        console.log('[GestaltApp] Updating param displays after randomize');
+                        this.updateSynthParamDisplays();
+                    }, 50);
+                }
             }
         });
         
@@ -622,8 +632,8 @@ class GestaltApp {
     buildSynthParams() {
         if (!this.elements.synthParamsContainer || !this.engine) return;
         
-        const engineType = this.engine.currentEngineType || 'honey';
-        this.currentEngineType = engineType;
+        const engineType = this.currentEngineType;   
+        console.log(`[GestaltApp] Building params for engine: ${engineType}`);
         
         const params = SYNTH_PARAMETERS[engineType];
         if (!params) {
@@ -728,7 +738,21 @@ class GestaltApp {
      * Get current synth parameter value from engine
      */
     getSynthParamValue(paramName) {
+        if (!this.engine) {
+            console.warn(`[GestaltApp] No engine for param ${paramName}`);
+            return undefined;
+        }
+        
+        const engineType = this.currentEngineType;
+        const voicePool = this.engine.voicePool;
+        
+        if (!voicePool || voicePool.length === 0) {
+            console.warn(`[GestaltApp] No voice pool for param ${paramName}`);
+            return undefined;
+        }
         if (!this.engine) return undefined;
+        
+        const voice = voicePool[0];
         
         const engineType = this.engine.currentEngineType || 'honey';
         const voicePool = this.engine.voicePool;
@@ -804,48 +828,87 @@ class GestaltApp {
      * Set synth parameter on engine
      */
     setSynthParam(paramName, value) {
-        if (!this.engine) return;
+        if (!this.engine) {
+            console.error('[GestaltApp] Cannot set param: engine missing');
+            return;
+        }
         
-        const engineType = this.engine.currentEngineType || 'honey';
+        const engineType = this.currentEngineType;
         
-        // Update all voices in the pool
-        this.engine.voicePool.forEach(voice => {
-            voice.setParam(paramName, value);
-        });
+        console.log(`[GestaltApp] Setting ${engineType} param ${paramName} = ${value}`);
         
-        console.log(`[GestaltApp] Set ${engineType} param ${paramName} = ${value}`);
+        // For polyphonic engine, update all voices in the pool
+        if (this.engine.voicePool && Array.isArray(this.engine.voicePool)) {
+            let successCount = 0;
+            this.engine.voicePool.forEach((voice, index) => {
+                try {
+                    if (voice && typeof voice.setParam === 'function') {
+                        voice.setParam(paramName, value);
+                        successCount++;
+                    } else {
+                        console.warn(`[GestaltApp] Voice ${index} missing setParam`);
+                    }
+                } catch (error) {
+                    console.error(`[GestaltApp] Error on voice ${index}:`, error);
+                }
+            });
+            console.log(`[GestaltApp] Updated ${successCount}/${this.engine.voicePool.length} voices`);
+        } else {
+            console.error('[GestaltApp] Voice pool not found or not an array');
+        }
     }
 
     /**
      * Update synth parameter displays (call after randomPatch)
      */
     updateSynthParamDisplays() {
-        if (!this.synthParamsVisible || !this.elements.synthParamsContainer) return;
+        if (!this.synthParamsVisible || !this.elements.synthParamsContainer) {
+            console.log('[GestaltApp] Skipping param display update (panel not visible)');
+            return;
+        }
         
-        const engineType = this.engine?.currentEngineType || 'honey';
+        const engineType = this.currentEngineType;
+        
+        console.log(`[GestaltApp] Updating param displays for: ${engineType}`);
         
         // If engine changed, rebuild entirely
-        if (engineType !== this.currentEngineType) {
+        if (engineType !== this.lastDisplayedEngine) {
+            console.log(`[GestaltApp] Engine changed, rebuilding params`);
+            this.lastDisplayedEngine = engineType;
             this.buildSynthParams();
             return;
         }
         
         // Update existing parameter values
         const params = SYNTH_PARAMETERS[engineType];
-        if (!params) return;
+        if (!params) {
+            console.error(`[GestaltApp] No params defined for ${engineType}`);
+            return;
+        }
+        
+        let updateCount = 0;
         
         Object.values(params).forEach(groupParams => {
             groupParams.forEach(param => {
                 const paramDiv = this.elements.synthParamsContainer
                     .querySelector(`[data-param-name="${param.name}"]`);
                 
-                if (!paramDiv) return;
+                if (!paramDiv) {
+                    console.warn(`[GestaltApp] Param div not found for ${param.name}`);
+                    return;
+                }
                 
                 const control = paramDiv.querySelector('input, select');
                 const valueDisplay = paramDiv.querySelector('.synth-param-value');
                 
                 const currentValue = this.getSynthParamValue(param.name);
-                if (currentValue === undefined) return;
+                
+                if (currentValue === undefined) {
+                    console.warn(`[GestaltApp] Could not get value for ${param.name}`);
+                    return;
+                }
+                
+                updateCount++;
                 
                 if (param.type === 'range') {
                     control.value = currentValue;
@@ -862,6 +925,8 @@ class GestaltApp {
                 }
             });
         });
+        
+        console.log(`[GestaltApp] Updated ${updateCount} parameters`);
     }
 
     // ============================================================================
@@ -911,6 +976,9 @@ class GestaltApp {
             btn.classList.toggle('active', btn.dataset.engine === engineType);
         });
         
+        // IMPORTANT: Track engine type BEFORE updating engine
+        this.currentEngineType = engineType;
+        
         // Update engine
         this.engine.setEngineType(engineType);
         
@@ -921,6 +989,8 @@ class GestaltApp {
         if (this.synthParamsVisible) {
             this.buildSynthParams();
         }
+        
+        console.log(`[GestaltApp] Engine switched to ${engineType}`);
     }
     
     /**
