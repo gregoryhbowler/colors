@@ -70,7 +70,7 @@ export function midiToFreq(midi) {
 /**
  * Get scale notes as MIDI numbers in a given octave range
  */
-export function getScaleNotes(root, scaleName, octaveLow = 3, octaveHigh = 5) {
+export function getScaleNotes(root, scaleName, octaveLow = 3, octaveHigh = 5, minMidi = 0, maxMidi = 127) {
     const rootIndex = NOTE_NAMES.indexOf(root);
     if (rootIndex === -1) return [];
     
@@ -80,7 +80,7 @@ export function getScaleNotes(root, scaleName, octaveLow = 3, octaveHigh = 5) {
     for (let octave = octaveLow; octave <= octaveHigh; octave++) {
         for (const interval of scaleIntervals) {
             const midi = (rootIndex + interval) + (octave + 1) * 12;
-            if (midi >= 36 && midi <= 96) { // Keep in reasonable range
+            if (midi >= minMidi && midi <= maxMidi) {
                 notes.push(midi);
             }
         }
