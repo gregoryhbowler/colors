@@ -637,6 +637,153 @@ body {
     letter-spacing: -0.02em;
 }
 
+/* Synth Parameters Panel */
+.synth-params-panel {
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.synth-params-panel.hidden {
+    display: none;
+}
+
+.synth-params-container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+.synth-param-group {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+}
+
+.synth-param-group-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    margin-bottom: var(--space-sm);
+    padding-bottom: var(--space-xs);
+    border-bottom: 1px solid var(--border-light);
+}
+
+.synth-param {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-sm);
+}
+
+.synth-param:last-child {
+    margin-bottom: 0;
+}
+
+.synth-param label {
+    flex: 0 0 120px;
+    font-size: 0.7rem;
+    font-weight: 400;
+    color: var(--text-secondary);
+    text-transform: lowercase;
+}
+
+.synth-param input[type="range"] {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: 2px;
+    cursor: pointer;
+}
+
+.synth-param input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--text-primary);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.synth-param input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.synth-param input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--text-primary);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.synth-param select {
+    flex: 1;
+    padding: var(--space-sm) var(--space-md);
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.synth-param select:hover {
+    border-color: var(--border-medium);
+}
+
+.synth-param select:focus {
+    outline: none;
+    border-color: var(--text-primary);
+    box-shadow: 0 0 0 3px rgba(42, 42, 42, 0.1);
+}
+
+.synth-param-value {
+    flex: 0 0 60px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    text-align: right;
+}
+
+.view-synth-btn {
+    margin-top: var(--space-sm);
+}
+
+.view-synth-btn.active {
+    background: var(--text-primary);
+    color: white;
+}
+
+/* Scrollbar for synth params panel */
+.synth-params-panel::-webkit-scrollbar {
+    width: 6px;
+}
+
+.synth-params-panel::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+
+.synth-params-panel::-webkit-scrollbar-thumb {
+    background: var(--border-medium);
+    border-radius: 3px;
+}
+
+.synth-params-panel::-webkit-scrollbar-thumb:hover {
+    background: var(--text-dim);
+}
+
 /* Zone Selector */
 .zone-selector {
     display: flex;
