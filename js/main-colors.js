@@ -1,5 +1,6 @@
 // COLORS — Main Application Controller
 // Now with keyboard-spanning gesture palette system
+// Updated: Proper AudioWorklet-based Mimeophon delay
 
 import { PolyphonicEngine } from './polyphonic-engine.js';
 import { KeyboardGesturePalette } from './keyboard-palette.js';
@@ -135,14 +136,27 @@ class GestaltApp {
         this.masterGain.gain.value = 0.8;
         this.masterGain.connect(this.audioContext.destination);
         
-        // Create delay effect
+        // Create delay effect (async - uses AudioWorklet)
+        console.log('[GestaltApp] Creating Mimeophon delay (AudioWorklet)...');
         this.delay = new MimeophonDelay(this.audioContext);
-        this.delay.connect(this.masterGain);
+        
+        try {
+            await this.delay.ensureReady();  // Wait for worklet to load
+            this.delay.connect(this.masterGain);
+            console.log('[GestaltApp] Mimeophon delay ready');
+        } catch (error) {
+            console.error('[GestaltApp] Failed to initialize Mimeophon delay:', error);
+            // Continue without delay if it fails
+            this.delay = null;
+        }
         
         // Create polyphonic engine
         this.engine = new PolyphonicEngine(this.audioContext, 8);
         this.engine.connect(this.masterGain);
-        this.engine.connectSend(this.delay.input);
+        
+        if (this.delay) {
+            this.engine.connectSend(this.delay.input);
+        }
         
         // Create keyboard-spanning gesture palette (NEW!)
         console.log('[GestaltApp] Creating keyboard gesture palette...');
@@ -289,11 +303,11 @@ class GestaltApp {
             this.toggleGridVisibility();
         });
         
-        // Delay controls
+        // Delay controls - with null checks for delay
         this.elements.delaySend.addEventListener('input', (e) => {
             const value = parseInt(e.target.value);
             this.elements.delaySendValue.textContent = `${value}%`;
-            if (this.engine) {
+            if (this.engine && this.delay) {
                 this.engine.setSendLevel(value / 100);
             }
         });
@@ -316,7 +330,7 @@ class GestaltApp {
             const value = parseInt(e.target.value);
             this.elements.delayMicroRateValue.textContent = `${value}%`;
             if (this.delay) {
-                this.delay.setMicroRate((value - 50) / 50);
+                this.delay.setMicroRate(value / 100);
             }
         });
         
