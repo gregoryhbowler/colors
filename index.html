@@ -36,6 +36,10 @@
                 <button class="action-btn randomize-btn" id="randomizePatch">
                     <span class="btn-icon">⟳</span> RANDOM PATCH
                 </button>
+                <button class="action-btn view-synth-btn" id="viewSynthBtn">
+                    <span class="btn-icon">🎛️</span>
+                    <span>VIEW SYNTH</span>
+                </button>
             </div>
 
             <div class="panel-section">
@@ -204,6 +208,12 @@
                     <span class="gesture-notes">Ready</span>
                 </div>
             </div>
+            <div class="synth-params-panel panel-section hidden" id="synthParamsPanel">
+                <div class="section-title">synth parameters</div>
+                <div class="synth-params-container" id="synthParamsContainer">
+                <!-- Parameters will be dynamically generated here -->
+            </div>
+</div>
         </section>
 
         <!-- Right Panel: Effects + Recording -->
