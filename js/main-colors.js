@@ -487,17 +487,17 @@ class GestaltApp {
             return;
         }
         
-        // Trigger gesture for slot
-        const gesture = this.player.triggerSlot(slotId, velocity);
-        
-        if (!gesture) {
+        // Trigger gesture for slot as a one-shot (no looping)
+        const result = this.player.triggerSlot(slotId, velocity, { forceOneShot: true });
+
+        if (!result?.gesture) {
             console.error(`[GestaltApp] No gesture returned for slot ${slotId}`);
             return;
         }
-        
+
         // Update UI
         this.updateActivePad(slotId, true);
-        this.updateActiveGestureDisplay(gesture);
+        this.updateActiveGestureDisplay(result.gesture, result.isLooping);
         
         // Flash MIDI indicator
         if (this.midiHandler?.hasRecentActivity(200)) {
@@ -581,7 +581,7 @@ class GestaltApp {
     /**
      * Update active gesture display
      */
-    updateActiveGestureDisplay(gesture) {
+    updateActiveGestureDisplay(gesture, isLoopingOverride = null) {
         if (!gesture) {
             this.elements.activeGestureInfo.innerHTML = `
                 <span class="gesture-type">—</span>
@@ -589,10 +589,13 @@ class GestaltApp {
             `;
             return;
         }
-        
+
         const eventCount = gesture.events.length;
-        const loopStatus = gesture.loopLengthBeats ? `${gesture.loopLengthBeats}bar loop` : 'one-shot';
-        
+        const shouldLoop = isLoopingOverride === null
+            ? Boolean(gesture.loopLengthBeats)
+            : isLoopingOverride;
+        const loopStatus = shouldLoop ? `${gesture.loopLengthBeats}bar loop` : 'one-shot';
+
         this.elements.activeGestureInfo.innerHTML = `
             <span class="gesture-type">${gesture.typeId}</span>
             <span class="gesture-notes">${gesture.display} • ${eventCount} events • ${loopStatus}</span>
