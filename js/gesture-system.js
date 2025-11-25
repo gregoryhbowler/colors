@@ -32,6 +32,8 @@ function generateBlockChord(chord, voicingIndex = 0) {
     const voicings = generateVoicings(chord);
     const voicing = voicings[voicingIndex % voicings.length];
     
+    console.log(`[Block] Chord ${chord.symbol}: notes=${voicing.join(',')}, freqs=${voicing.map(midiToFreq).map(f => f.toFixed(1)).join(',')}`);
+    
     return {
         type: 'block',
         typeName: 'BLOCK',
@@ -245,7 +247,9 @@ function generatePercGesture(scaleNotes, style = 'hit') {
 export class GestureGrid {
     constructor() {
         this.pads = new Array(32).fill(null);
-        this.columnTypes = new Array(8).fill(0); // Index into GESTURE_TYPES
+        // Initialize with varied column types instead of all zeros
+        // This gives the grid variety from the start
+        this.columnTypes = [0, 1, 2, 3, 0, 1, 2, 3]; // BLOCK, STRUM, ARP, SINGLE, repeat
         this.root = 'C';
         this.scale = 'major';
         this.octave = 4;
@@ -288,12 +292,19 @@ export class GestureGrid {
      * Regenerate all pads
      */
     regenerate() {
+        console.log(`[GestureGrid] Regenerating grid: root=${this.root}, scale=${this.scale}, octave=${this.octave}`);
+        
         const chords = getDiatonicChords(this.root, this.scale, this.octave);
         const scaleNotes = getScaleNotes(this.root, this.scale, this.octave - 1, this.octave + 1);
+        
+        console.log(`[GestureGrid] Chords: ${chords.map(c => c.symbol).join(', ')}`);
+        console.log(`[GestureGrid] Scale notes: ${scaleNotes.join(', ')}`);
         
         for (let col = 0; col < 8; col++) {
             this.regenerateColumn(col, chords, scaleNotes);
         }
+        
+        console.log('[GestureGrid] Regeneration complete');
     }
     
     /**
@@ -308,6 +319,7 @@ export class GestureGrid {
         }
         
         const gestureType = GESTURE_TYPES[this.columnTypes[column]];
+        console.log(`[GestureGrid] Column ${column}: type=${gestureType.name}`);
         
         for (let row = 0; row < 4; row++) {
             const padIndex = row * 8 + column;
@@ -320,6 +332,8 @@ export class GestureGrid {
                 scaleNotes, 
                 variation
             );
+            
+            console.log(`[GestureGrid] Pad ${padIndex} (row ${row}): ${this.pads[padIndex].display}, notes=${this.pads[padIndex].notes.join(',')}`);
         }
     }
     
@@ -408,6 +422,16 @@ export class GestureGrid {
     getMsPerBeat() {
         return 60000 / this.tempo;
     }
+    
+    /**
+     * Randomize column types
+     */
+    randomizeColumnTypes() {
+        for (let i = 0; i < 8; i++) {
+            this.columnTypes[i] = Math.floor(Math.random() * GESTURE_TYPES.length);
+        }
+        this.regenerate();
+    }
 }
 
 /**
@@ -432,10 +456,19 @@ export class GesturePlayer {
      * Trigger pad on
      */
     triggerPad(padIndex, velocity = 1) {
-        if (!this.grid) return;
+        if (!this.grid) {
+            console.error('[GesturePlayer] No grid set!');
+            return;
+        }
         
         const gesture = this.grid.getPad(padIndex);
-        if (!gesture) return;
+        if (!gesture) {
+            console.error(`[GesturePlayer] No gesture at pad ${padIndex}`);
+            return;
+        }
+        
+        console.log(`[GesturePlayer] Trigger pad ${padIndex}: ${gesture.type} - ${gesture.display}`);
+        console.log(`[GesturePlayer] Notes: ${gesture.notes.join(', ')}`);
         
         // Stop any existing playback for this pad
         this.releasePad(padIndex);
@@ -447,7 +480,8 @@ export class GesturePlayer {
             startTime: performance.now(),
             activeNotes: [],
             intervalId: null,
-            stepIndex: 0
+            stepIndex: 0,
+            padIndex // Store padIndex for reference
         };
         
         this.activeGestures.set(padIndex, playbackState);
@@ -488,6 +522,8 @@ export class GesturePlayer {
         const state = this.activeGestures.get(padIndex);
         if (!state) return;
         
+        console.log(`[GesturePlayer] Release pad ${padIndex}`);
+        
         // Stop any loops
         if (state.intervalId) {
             clearInterval(state.intervalId);
@@ -514,7 +550,10 @@ export class GesturePlayer {
      * Play block chord
      */
     playBlock(state) {
+        console.log(`[GesturePlayer] Playing block chord: ${state.gesture.notes.join(', ')}`);
+        
         for (const note of state.gesture.notes) {
+            console.log(`[GesturePlayer] noteOn: ${note} (freq: ${midiToFreq(note).toFixed(1)} Hz)`);
             this.engine.noteOn(note, state.velocity);
             state.activeNotes.push(note);
         }
@@ -525,12 +564,14 @@ export class GesturePlayer {
      */
     playStrum(state) {
         const notes = state.gesture.notes;
+        const padIndex = state.padIndex;
         
         notes.forEach((note, i) => {
             const delay = this.grid.getStrumDelay(i);
             
             setTimeout(() => {
-                if (this.activeGestures.has(state)) {
+                // Check if this pad is still active
+                if (this.activeGestures.has(padIndex)) {
                     this.engine.noteOn(note, state.velocity * (1 - i * 0.05));
                     state.activeNotes.push(note);
                 }
@@ -576,6 +617,7 @@ export class GesturePlayer {
      */
     playSingle(state) {
         const note = state.gesture.notes[0];
+        console.log(`[GesturePlayer] Playing single note: ${note}`);
         this.engine.noteOn(note, state.velocity);
         state.activeNotes.push(note);
         
