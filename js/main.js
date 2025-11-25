@@ -109,6 +109,8 @@ class GestaltApp {
     async init() {
         if (this.isInitialized) return;
         
+        console.log('[GestaltApp] Initializing...');
+        
         // Create audio context
         this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         
@@ -116,6 +118,8 @@ class GestaltApp {
         if (this.audioContext.state === 'suspended') {
             await this.audioContext.resume();
         }
+        
+        console.log(`[GestaltApp] Audio context created: ${this.audioContext.sampleRate} Hz`);
         
         // Create master gain
         this.masterGain = this.audioContext.createGain();
@@ -137,6 +141,7 @@ class GestaltApp {
         this.player.setGrid(this.grid);
         
         // Generate initial grid
+        console.log('[GestaltApp] Generating initial grid...');
         this.grid.regenerate();
         
         // Create recorder
@@ -161,8 +166,11 @@ class GestaltApp {
         this.isInitialized = true;
         
         // Update UI
+        console.log('[GestaltApp] Updating UI...');
         this.updateKnobLabels();
         this.buildPadGrid();
+        
+        console.log('[GestaltApp] Initialization complete!');
     }
     
     /**
@@ -231,8 +239,11 @@ class GestaltApp {
         
         // Regenerate grid
         this.elements.regenerateGestures.addEventListener('click', () => {
+            console.log('[GestaltApp] Regenerate button clicked');
             if (this.grid) {
-                this.grid.regenerate();
+                // Randomize column types for variety
+                this.grid.randomizeColumnTypes();
+                this.updateKnobLabels();
                 this.buildPadGrid();
             }
         });
@@ -346,6 +357,8 @@ class GestaltApp {
     selectEngine(engineType) {
         if (!this.engine) return;
         
+        console.log(`[GestaltApp] Selecting engine: ${engineType}`);
+        
         // Update UI
         this.elements.engineBtns.forEach(btn => {
             btn.classList.toggle('active', btn.dataset.engine === engineType);
@@ -380,6 +393,8 @@ class GestaltApp {
         const root = this.elements.rootNote.value;
         const scale = this.elements.scaleMode.value;
         
+        console.log(`[GestaltApp] Updating harmony: ${root} ${scale}`);
+        
         this.grid.setHarmony(root, scale);
         this.buildPadGrid();
     }
@@ -402,6 +417,8 @@ class GestaltApp {
     buildPadGrid() {
         if (!this.grid) return;
         
+        console.log('[GestaltApp] Building pad grid...');
+        
         this.elements.padGrid.innerHTML = '';
         
         // Create 32 pads (4 rows x 8 columns)
@@ -420,15 +437,22 @@ class GestaltApp {
                         <span class="pad-type">${gesture.typeName}</span>
                         <span class="pad-chord">${gesture.display || ''}</span>
                     `;
+                } else {
+                    pad.innerHTML = `
+                        <span class="pad-type">EMPTY</span>
+                        <span class="pad-chord">—</span>
+                    `;
                 }
                 
                 // Mouse/touch events for grid interaction
                 pad.addEventListener('mousedown', (e) => {
                     e.preventDefault();
+                    console.log(`[UI] Pad ${padIndex} mousedown`);
                     this.handlePadOn(padIndex, 1);
                 });
                 
                 pad.addEventListener('mouseup', () => {
+                    console.log(`[UI] Pad ${padIndex} mouseup`);
                     this.handlePadOff(padIndex);
                 });
                 
@@ -441,6 +465,7 @@ class GestaltApp {
                 // Touch support
                 pad.addEventListener('touchstart', (e) => {
                     e.preventDefault();
+                    console.log(`[UI] Pad ${padIndex} touchstart`);
                     this.handlePadOn(padIndex, 1);
                 });
                 
@@ -452,19 +477,34 @@ class GestaltApp {
                 this.elements.padGrid.appendChild(pad);
             }
         }
+        
+        console.log('[GestaltApp] Pad grid built');
     }
     
     /**
      * Handle pad on (press)
      */
     handlePadOn(padIndex, velocity) {
+        console.log(`[GestaltApp] handlePadOn(${padIndex}, ${velocity})`);
+        
         if (!this.isInitialized) {
+            console.log('[GestaltApp] Not initialized, initializing first...');
             this.init().then(() => this.handlePadOn(padIndex, velocity));
+            return;
+        }
+        
+        if (!this.player) {
+            console.error('[GestaltApp] No player!');
             return;
         }
         
         // Trigger gesture
         const gesture = this.player.triggerPad(padIndex, velocity);
+        
+        if (!gesture) {
+            console.error(`[GestaltApp] No gesture returned for pad ${padIndex}`);
+            return;
+        }
         
         // Update UI
         this.updateActivePad(padIndex, true);
@@ -511,6 +551,8 @@ class GestaltApp {
             newType = (currentType - 1 + GESTURE_TYPES.length) % GESTURE_TYPES.length;
         }
         
+        console.log(`[GestaltApp] Knob ${knobIndex}: ${GESTURE_TYPES[currentType].name} -> ${GESTURE_TYPES[newType].name}`);
+        
         // Update column type
         this.grid.setColumnType(knobIndex, newType);
         
@@ -528,9 +570,14 @@ class GestaltApp {
     updateKnobLabels() {
         if (!this.grid) return;
         
+        console.log('[GestaltApp] Updating knob labels...');
+        
         for (let i = 0; i < 8; i++) {
             const typeName = this.grid.getColumnTypeName(i);
-            this.elements.knobLabels[i].textContent = typeName;
+            if (this.elements.knobLabels[i]) {
+                this.elements.knobLabels[i].textContent = typeName;
+            }
+            console.log(`[GestaltApp] Column ${i}: ${typeName}`);
         }
     }
     
@@ -626,12 +673,15 @@ class GestaltApp {
 
 // Initialize app on DOM ready
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('[GESTALT] DOM ready, creating app...');
+    
     const app = new GestaltApp();
     app.cacheElements();
     app.setupEventListeners();
     
     // Initialize on first interaction (for autoplay policy)
     const initOnInteraction = () => {
+        console.log('[GESTALT] First interaction, initializing...');
         app.init();
         document.removeEventListener('click', initOnInteraction);
         document.removeEventListener('keydown', initOnInteraction);
