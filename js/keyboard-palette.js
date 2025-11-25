@@ -37,9 +37,12 @@ export class KeyboardGesturePalette {
         
         // Slot configurations (one per MIDI note in range)
         this.slotConfigs = new Map();
-        
+
         // Generated gestures (cached)
         this.gestures = new Map();
+
+        // Locked slots that should not be regenerated
+        this.lockedSlots = new Set();
         
         // Contexts
         this.harmonicContext = null;
@@ -60,69 +63,81 @@ export class KeyboardGesturePalette {
         this.updateHarmonicContext();
         this.regenerateAll();
     }
-    
+
+    /**
+     * Clamp helper
+     */
+    clamp(value, min = 0, max = 1) {
+        return Math.min(max, Math.max(min, value));
+    }
+
     /**
      * Initialize all slot configurations
      */
     initializeSlots() {
         console.log(`[KeyboardPalette] Initializing slots ${this.minSlot}-${this.maxSlot}`);
-        
+
         const totalSlots = this.maxSlot - this.minSlot + 1;
         const rng = new SeededRandom(12345); // Master seed for consistent layout
-        
+
         for (let slotId = this.minSlot; slotId <= this.maxSlot; slotId++) {
-            // Determine characteristics based on position
-            const position = (slotId - this.minSlot) / totalSlots; // 0-1
-            
-            // Register tends to matter
-            // Low notes -> bass, texture, pedals
-            // Mid notes -> chords, harmonic content
-            // High notes -> leads, melodic content
-            
-            let role;
-            let styleId;
-            let registerShift;
-            
-            if (position < 0.25) {
-                // Lower register
-                role = rng.choice(['bass', 'texture', 'chords']);
-                styleId = rng.choice(['tintinnabuli', 'lyricalMinimal', 'aliceCascade']);
-                registerShift = -1;
-            } else if (position < 0.5) {
-                // Lower-mid register
-                role = rng.choice(['chords', 'texture']);
-                styleId = this.weightedChoice(this.styleDistribution, rng);
-                registerShift = 0;
-            } else if (position < 0.75) {
-                // Upper-mid register
-                role = rng.choice(['chords', 'lead']);
-                styleId = this.weightedChoice(this.styleDistribution, rng);
-                registerShift = 0;
-            } else {
-                // Upper register
-                role = rng.choice(['lead', 'texture']);
-                styleId = rng.choice(['fracturedLead', 'lyricalMinimal', 'aliceCascade']);
-                registerShift = 1;
-            }
-            
-            // Varied parameters
-            const slotConfig = new SlotConfig({
-                slotId: slotId,
-                styleId: styleId,
-                role: role,
-                density: rng.range(0.3, 0.8),
-                complexity: rng.range(0.3, 0.7),
-                tension: rng.range(0.2, 0.6),
-                registerShift: registerShift,
-                rhythmLoose: rng.range(0.1, 0.4),
-                motifVariation: rng.range(0.2, 0.5),
-                seed: rng.next() * 1000000
-            });
-            
+            const slotConfig = this.createSlotConfig(slotId, rng, totalSlots);
             this.slotConfigs.set(slotId, slotConfig);
         }
-        
+
         console.log(`[KeyboardPalette] Initialized ${this.slotConfigs.size} slots`);
+    }
+
+    /**
+     * Create a single slot configuration using the current distribution
+     */
+    createSlotConfig(slotId, rng, totalSlots) {
+        // Determine characteristics based on position
+        const position = (slotId - this.minSlot) / totalSlots; // 0-1
+
+        // Register tends to matter
+        // Low notes -> bass, texture, pedals
+        // Mid notes -> chords, harmonic content
+        // High notes -> leads, melodic content
+
+        let role;
+        let styleId;
+        let registerShift;
+
+        if (position < 0.25) {
+            // Lower register
+            role = rng.choice(['bass', 'texture', 'chords']);
+            styleId = rng.choice(['tintinnabuli', 'lyricalMinimal', 'aliceCascade']);
+            registerShift = -1;
+        } else if (position < 0.5) {
+            // Lower-mid register
+            role = rng.choice(['chords', 'texture']);
+            styleId = this.weightedChoice(this.styleDistribution, rng);
+            registerShift = 0;
+        } else if (position < 0.75) {
+            // Upper-mid register
+            role = rng.choice(['chords', 'lead']);
+            styleId = this.weightedChoice(this.styleDistribution, rng);
+            registerShift = 0;
+        } else {
+            // Upper register
+            role = rng.choice(['lead', 'texture']);
+            styleId = rng.choice(['fracturedLead', 'lyricalMinimal', 'aliceCascade']);
+            registerShift = 1;
+        }
+
+        return new SlotConfig({
+            slotId: slotId,
+            styleId: styleId,
+            role: role,
+            density: rng.range(0.3, 0.8),
+            complexity: rng.range(0.3, 0.7),
+            tension: rng.range(0.2, 0.6),
+            registerShift: registerShift,
+            rhythmLoose: rng.range(0.1, 0.4),
+            motifVariation: rng.range(0.2, 0.5),
+            seed: rng.next() * 1000000
+        });
     }
     
     /**
@@ -174,11 +189,11 @@ export class KeyboardGesturePalette {
      */
     setHarmony(root, scale) {
         if (this.root === root && this.scale === scale) return;
-        
+
         this.root = root;
         this.scale = scale;
         this.updateHarmonicContext();
-        this.regenerateAll();
+        this.regenerateAll({ respectLocks: true });
     }
     
     /**
@@ -192,14 +207,20 @@ export class KeyboardGesturePalette {
     /**
      * Regenerate all gestures
      */
-    regenerateAll() {
+    regenerateAll({ respectLocks = false } = {}) {
         console.log('[KeyboardPalette] Regenerating all gestures...');
-        
-        this.gestures.clear();
-        
+
+        if (!respectLocks) {
+            this.gestures.clear();
+        }
+
         let generated = 0;
-        
+
         for (const [slotId, config] of this.slotConfigs) {
+            if (respectLocks && this.lockedSlots.has(slotId) && this.gestures.has(slotId)) {
+                continue;
+            }
+
             const gesture = styleRegistry.generate(
                 config,
                 this.harmonicContext,
@@ -219,7 +240,11 @@ export class KeyboardGesturePalette {
     regenerateSlot(slotId) {
         const config = this.slotConfigs.get(slotId);
         if (!config) return null;
-        
+
+        if (this.lockedSlots.has(slotId) && this.gestures.has(slotId)) {
+            return this.gestures.get(slotId);
+        }
+
         const gesture = styleRegistry.generate(
             config,
             this.harmonicContext,
@@ -236,12 +261,39 @@ export class KeyboardGesturePalette {
     getGesture(slotId) {
         return this.gestures.get(slotId);
     }
-    
+
     /**
      * Get slot config
      */
     getSlotConfig(slotId) {
         return this.slotConfigs.get(slotId);
+    }
+
+    /**
+     * Lock state helpers
+     */
+    isSlotLocked(slotId) {
+        return this.lockedSlots.has(slotId);
+    }
+
+    toggleSlotLock(slotId) {
+        if (this.lockedSlots.has(slotId)) {
+            this.lockedSlots.delete(slotId);
+            return false;
+        }
+
+        this.lockedSlots.add(slotId);
+        return true;
+    }
+
+    /**
+     * Regenerate only unlocked slots
+     */
+    regenerateUnlockedSlots() {
+        for (const [slotId] of this.slotConfigs) {
+            if (this.lockedSlots.has(slotId)) continue;
+            this.regenerateSlot(slotId);
+        }
     }
     
     /**
@@ -277,10 +329,74 @@ export class KeyboardGesturePalette {
         for (const style of availableStyles) {
             this.styleDistribution[style] /= total;
         }
-        
-        // Reinitialize and regenerate
-        this.initializeSlots();
-        this.regenerateAll();
+
+        const totalSlots = this.maxSlot - this.minSlot + 1;
+
+        for (const [slotId] of this.slotConfigs) {
+            if (this.lockedSlots.has(slotId)) continue;
+
+            const slotConfig = this.createSlotConfig(slotId, rng, totalSlots);
+            this.slotConfigs.set(slotId, slotConfig);
+            this.regenerateSlot(slotId);
+        }
+    }
+
+    /**
+     * Evolve unlocked slots based on locked references
+     */
+    evolveUnlockedSlots() {
+        const lockedConfigs = Array.from(this.lockedSlots)
+            .map(slotId => this.slotConfigs.get(slotId))
+            .filter(Boolean);
+
+        if (lockedConfigs.length === 0) {
+            console.log('[KeyboardPalette] No locked slots to evolve from; regenerating unlocked');
+            this.regenerateUnlockedSlots();
+            return;
+        }
+
+        const rng = new SeededRandom(Date.now());
+
+        for (const [slotId, config] of this.slotConfigs) {
+            if (this.lockedSlots.has(slotId)) continue;
+
+            const reference = this.pickReferenceConfig(slotId, lockedConfigs, rng);
+            const evolvedConfig = this.createEvolvedConfig(config, reference, rng);
+
+            this.slotConfigs.set(slotId, evolvedConfig);
+            this.regenerateSlot(slotId);
+        }
+    }
+
+    pickReferenceConfig(slotId, references, rng) {
+        const sorted = [...references].sort((a, b) => Math.abs(a.slotId - slotId) - Math.abs(b.slotId - slotId));
+        const candidates = sorted.slice(0, Math.max(1, Math.min(3, sorted.length)));
+        return rng.choice(candidates);
+    }
+
+    createEvolvedConfig(baseConfig, referenceConfig, rng) {
+        if (!referenceConfig) return baseConfig;
+
+        const blend = (base, target, strength = 0.5) => {
+            return this.clamp(base + ((target - base) * strength) + ((rng.next() - 0.5) * 0.15));
+        };
+
+        const jitter = (value, amount = 0.1) => {
+            return this.clamp(value + ((rng.next() - 0.5) * amount));
+        };
+
+        return new SlotConfig({
+            ...baseConfig,
+            slotId: baseConfig.slotId,
+            styleId: referenceConfig.styleId,
+            density: blend(baseConfig.density, referenceConfig.density, 0.6),
+            complexity: blend(baseConfig.complexity, referenceConfig.complexity, 0.6),
+            tension: blend(baseConfig.tension, referenceConfig.tension, 0.4),
+            registerShift: baseConfig.registerShift,
+            rhythmLoose: jitter(referenceConfig.rhythmLoose, 0.1),
+            motifVariation: jitter(referenceConfig.motifVariation, 0.2),
+            seed: rng.next() * 1000000
+        });
     }
     
     /**

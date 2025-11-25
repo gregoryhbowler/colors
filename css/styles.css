@@ -345,6 +345,32 @@ body {
     font-size: 1rem;
 }
 
+.mode-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    background: linear-gradient(135deg, rgba(232, 213, 232, 0.8), rgba(212, 247, 232, 0.8));
+    color: var(--text-primary);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    width: fit-content;
+    margin-bottom: var(--space-sm);
+    border: 1px solid var(--border-light);
+    box-shadow: var(--shadow-lifted);
+}
+
+.evolve-btn {
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.evolve-btn .btn-icon {
+    color: #c49ac4;
+}
+
 .randomize-btn:hover .btn-icon {
     animation: spin 0.5s ease;
 }
@@ -467,6 +493,11 @@ body {
     min-height: 70px;
 }
 
+.pad.locked {
+    border-style: dashed;
+    opacity: 0.9;
+}
+
 /* Colorful column backgrounds */
 .pad:nth-child(8n+1) { background: rgba(232, 213, 232, 0.4); } /* pink */
 .pad:nth-child(8n+2) { background: rgba(212, 228, 247, 0.4); } /* blue */
@@ -498,6 +529,19 @@ body {
     box-shadow: var(--shadow-medium);
 }
 
+.pad.locked .pad-lock-btn {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--text-primary);
+}
+
+.pad-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-xs);
+}
+
 .pad-type {
     font-size: 0.55rem;
     font-weight: 600;
@@ -511,6 +555,7 @@ body {
     color: var(--text-secondary);
 }
 
+.pad-chord,
 .pad-notes {
     font-size: 0.65rem;
     color: var(--text-secondary);
@@ -522,6 +567,24 @@ body {
     font-size: 0.9rem;
     font-weight: 600;
     color: var(--text-primary);
+}
+
+.pad-lock-btn {
+    border: 1px solid var(--border-light);
+    background: rgba(255, 255, 255, 0.8);
+    color: var(--text-secondary);
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    line-height: 1.2;
+}
+
+.pad-lock-btn:hover {
+    background: white;
+    box-shadow: var(--shadow-lifted);
 }
 
 /* Active Gesture Display */

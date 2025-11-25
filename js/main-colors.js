@@ -58,6 +58,7 @@ class GestaltApp {
             
             // Actions
             regenerateGestures: document.getElementById('regenerateGestures'),
+            evolveMotif: document.getElementById('evolveMotif'),
             toggleGrid: document.getElementById('toggleGrid'),
             
             // Knob display
@@ -231,6 +232,16 @@ class GestaltApp {
             if (this.palette) {
                 // Randomize distribution and regenerate
                 this.palette.randomizeDistribution();
+                this.updateKnobLabels();
+                this.buildPadGrid();
+            }
+        });
+
+        // Evolve unlocked gestures using locked references
+        this.elements.evolveMotif.addEventListener('click', () => {
+            console.log('[GestaltApp] Evolve button clicked');
+            if (this.palette) {
+                this.palette.evolveUnlockedSlots();
                 this.updateKnobLabels();
                 this.buildPadGrid();
             }
@@ -419,23 +430,47 @@ class GestaltApp {
                 const slotId = startSlot + padIndex;
                 const gesture = this.palette.getGesture(slotId);
                 const config = this.palette.getSlotConfig(slotId);
-                
+                const isLocked = this.palette.isSlotLocked(slotId);
+
                 const pad = document.createElement('div');
                 pad.className = 'pad';
                 pad.dataset.index = padIndex;
                 pad.dataset.slot = slotId;
-                
-                if (gesture && config) {
-                    pad.innerHTML = `
-                        <span class="pad-type">${gesture.typeId}</span>
-                        <span class="pad-chord">${gesture.display || ''}</span>
-                    `;
-                } else {
-                    pad.innerHTML = `
-                        <span class="pad-type">EMPTY</span>
-                        <span class="pad-chord">—</span>
-                    `;
-                }
+
+                pad.classList.toggle('locked', isLocked);
+
+                const padHeader = document.createElement('div');
+                padHeader.className = 'pad-header';
+
+                const typeLabel = document.createElement('span');
+                typeLabel.className = 'pad-type';
+                typeLabel.textContent = gesture && config ? gesture.typeId : 'EMPTY';
+
+                const lockBtn = document.createElement('button');
+                lockBtn.className = 'pad-lock-btn';
+                lockBtn.type = 'button';
+                lockBtn.textContent = isLocked ? '🔒' : '🔓';
+                lockBtn.title = isLocked ? 'Unlock motif' : 'Lock motif';
+
+                lockBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+
+                    const nowLocked = this.palette.toggleSlotLock(slotId);
+                    pad.classList.toggle('locked', nowLocked);
+                    lockBtn.textContent = nowLocked ? '🔒' : '🔓';
+                    lockBtn.title = nowLocked ? 'Unlock motif' : 'Lock motif';
+                });
+
+                padHeader.appendChild(typeLabel);
+                padHeader.appendChild(lockBtn);
+
+                const chordLabel = document.createElement('span');
+                chordLabel.className = 'pad-chord';
+                chordLabel.textContent = gesture && config ? (gesture.display || '—') : '—';
+
+                pad.appendChild(padHeader);
+                pad.appendChild(chordLabel);
                 
                 // Mouse/touch events
                 pad.addEventListener('mousedown', (e) => {
