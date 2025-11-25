@@ -1,9 +1,9 @@
 // Polyphonic Engine Wrapper
 // Wraps any synth engine for polyphonic voice management
 
-import { HoneySynth } from './honey-engine.js';
-import { VinegarSynth } from './vinegar-engine.js';
-import { MollySynth } from './molly-engine.js';
+import { HoneySynth } from './engines/honey-engine.js';
+import { VinegarSynth } from './engines/vinegar-engine.js';
+import { MollySynth } from './engines/molly-engine.js';
 import { midiToFreq } from './harmony.js';
 
 /**
@@ -22,10 +22,13 @@ class VoiceState {
         this.note = note;
         this.active = true;
         this.startTime = time;
-        this.synth.noteOn(midiToFreq(note), velocity);
+        const freq = midiToFreq(note);
+        console.log(`[Voice ${this.index}] noteOn: MIDI ${note} -> ${freq.toFixed(1)} Hz, vel=${velocity.toFixed(2)}`);
+        this.synth.noteOn(freq, velocity);
     }
     
     noteOff() {
+        console.log(`[Voice ${this.index}] noteOff: MIDI ${this.note}`);
         this.active = false;
         this.synth.noteOff();
     }
@@ -53,6 +56,8 @@ export class PolyphonicEngine {
         
         // Initialize voices
         this.initVoices();
+        
+        console.log(`[PolyphonicEngine] Initialized with ${maxVoices} voices, engine: ${this.engineType}`);
     }
     
     /**
@@ -68,6 +73,8 @@ export class PolyphonicEngine {
         });
         
         this.voices = [];
+        
+        console.log(`[PolyphonicEngine] Creating ${this.maxVoices} ${this.engineType} voices...`);
         
         // Create new voices
         for (let i = 0; i < this.maxVoices; i++) {
@@ -94,6 +101,8 @@ export class PolyphonicEngine {
             
             this.voices.push(new VoiceState(synth, i));
         }
+        
+        console.log(`[PolyphonicEngine] Voice pool initialized`);
     }
     
     /**
@@ -101,6 +110,7 @@ export class PolyphonicEngine {
      */
     setEngineType(type) {
         if (this.engineType === type) return;
+        console.log(`[PolyphonicEngine] Switching engine from ${this.engineType} to ${type}`);
         this.engineType = type;
         this.initVoices();
     }
@@ -111,6 +121,7 @@ export class PolyphonicEngine {
     setPolyphony(count) {
         if (this.maxVoices === count) return;
         this.maxVoices = Math.max(1, Math.min(16, count));
+        console.log(`[PolyphonicEngine] Setting polyphony to ${this.maxVoices}`);
         this.initVoices();
     }
     
@@ -121,6 +132,7 @@ export class PolyphonicEngine {
         // First, try to find a free voice
         for (const voice of this.voices) {
             if (!voice.active) {
+                console.log(`[PolyphonicEngine] Allocating free voice ${voice.index}`);
                 return voice;
             }
         }
@@ -132,6 +144,8 @@ export class PolyphonicEngine {
                 oldest = voice;
             }
         }
+        
+        console.log(`[PolyphonicEngine] Stealing voice ${oldest.index} (note ${oldest.note})`);
         
         // Release the stolen voice
         oldest.noteOff();
@@ -153,6 +167,8 @@ export class PolyphonicEngine {
      * Trigger a note on
      */
     noteOn(note, velocity = 1) {
+        console.log(`[PolyphonicEngine] noteOn(${note}, ${velocity.toFixed(2)})`);
+        
         // Check if this note is already playing
         let voice = this.findVoiceByNote(note);
         
@@ -181,6 +197,7 @@ export class PolyphonicEngine {
      * All notes off
      */
     allNotesOff() {
+        console.log('[PolyphonicEngine] All notes off');
         for (const voice of this.voices) {
             if (voice.active) {
                 voice.noteOff();
@@ -202,6 +219,7 @@ export class PolyphonicEngine {
      * Randomize patch on all voices
      */
     randomPatch() {
+        console.log('[PolyphonicEngine] Randomizing patch');
         // Generate random patch on first voice
         this.voices[0].synth.randomPatch();
         
