@@ -1,6 +1,7 @@
 // COLORS — Main Application Controller
 // Now with keyboard-spanning gesture palette system
 // Updated: Proper AudioWorklet-based Mimeophon delay
+// Added: Synth parameters view panel
 
 import { PolyphonicEngine } from './polyphonic-engine.js';
 import { KeyboardGesturePalette } from './keyboard-palette.js';
@@ -10,13 +11,190 @@ import { MIDIHandler, KeyboardHandler } from './midi-handler.js';
 import { WAVRecorder } from './recorder.js';
 import { NOTE_NAMES, SCALES, getScaleNotes, getDiatonicChords, buildChord, generateVoicings, CHORD_TYPES } from './harmony.js';
 
+// ============================================================================
+// SYNTH PARAMETERS CONFIGURATION
+// ============================================================================
+
+const SYNTH_PARAMETERS = {
+    honey: {
+        'VCO A': [
+            { name: 'vcoAOctave', label: 'Octave', type: 'range', min: -2, max: 2, step: 1, default: 0 },
+            { name: 'vcoAFine', label: 'Fine Tune', type: 'range', min: -50, max: 50, step: 1, default: 0, unit: 'cents' },
+            { name: 'vcoASawLevel', label: 'Saw Level', type: 'range', min: 0, max: 1, step: 0.01, default: 0.5 },
+            { name: 'vcoAPulseLevel', label: 'Pulse Level', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'pulseWidth', label: 'Pulse Width', type: 'range', min: 0, max: 1, step: 0.01, default: 0.5 },
+            { name: 'pwmAmount', label: 'PWM Amount', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'pwmSource', label: 'PWM Source', type: 'select', options: ['lfo', 'env'], default: 'lfo' }
+        ],
+        'VCO B / LFO': [
+            { name: 'vcoBMode', label: 'Mode', type: 'select', options: ['lfo', 'audio'], default: 'lfo' },
+            { name: 'vcoBShape', label: 'Shape', type: 'select', options: ['sine', 'triangle', 'sawtooth', 'square'], default: 'sine' },
+            { name: 'vcoBOctave', label: 'Octave', type: 'range', min: -2, max: 2, step: 1, default: -1 },
+            { name: 'vcoBFine', label: 'Fine Tune', type: 'range', min: -50, max: 50, step: 1, default: 0, unit: 'cents' },
+            { name: 'vcoBLevel', label: 'Audio Level', type: 'range', min: 0, max: 1, step: 0.01, default: 0.3 },
+            { name: 'lfoRate', label: 'LFO Rate', type: 'range', min: 0.1, max: 20, step: 0.1, default: 2, unit: 'Hz' },
+            { name: 'lfoToPitch', label: 'LFO→Pitch', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'lfoToPWM', label: 'LFO→PWM', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'lfoToAmp', label: 'LFO→Amp', type: 'range', min: 0, max: 1, step: 0.01, default: 0 }
+        ],
+        'Sub & Noise': [
+            { name: 'subType', label: 'Sub Type', type: 'select', options: ['-1', '-2'], default: '-1' },
+            { name: 'subLevel', label: 'Sub Level', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'noiseLevel', label: 'Noise Level', type: 'range', min: 0, max: 1, step: 0.01, default: 0 }
+        ],
+        'Filter': [
+            { name: 'filterType', label: 'Type', type: 'select', options: ['lowpass', 'highpass', 'bandpass'], default: 'lowpass' },
+            { name: 'filterFreq', label: 'Frequency', type: 'range', min: 20, max: 10000, step: 10, default: 1000, unit: 'Hz', scale: 'log' },
+            { name: 'filterRes', label: 'Resonance', type: 'range', min: 0.5, max: 20, step: 0.1, default: 1 },
+            { name: 'envToFilter', label: 'Env→Filter', type: 'range', min: -1, max: 1, step: 0.01, default: 0 },
+            { name: 'lfoToFilter', label: 'LFO→Filter', type: 'range', min: 0, max: 1, step: 0.01, default: 0 }
+        ],
+        'Envelope': [
+            { name: 'envRate', label: 'Rate Range', type: 'select', options: ['fast', 'medium', 'slow'], default: 'medium' },
+            { name: 'attack', label: 'Attack', type: 'range', min: 0.001, max: 2, step: 0.001, default: 0.01, unit: 's', scale: 'log' },
+            { name: 'decay', label: 'Decay', type: 'range', min: 0.01, max: 3, step: 0.01, default: 0.3, unit: 's', scale: 'log' },
+            { name: 'sustain', label: 'Sustain', type: 'range', min: 0, max: 1, step: 0.01, default: 0.5 },
+            { name: 'release', label: 'Release', type: 'range', min: 0.001, max: 5, step: 0.001, default: 0.5, unit: 's', scale: 'log' }
+        ],
+        'Drive': [
+            { name: 'driveMode', label: 'Mode', type: 'select', options: ['off', 'sym', 'asym'], default: 'off' },
+            { name: 'driveAmount', label: 'Amount', type: 'range', min: 0, max: 1, step: 0.01, default: 0.5 }
+        ]
+    },
+    
+    molly: {
+        'Oscillator': [
+            { name: 'oscWaveShape', label: 'Wave Shape', type: 'select', options: ['Triangle', 'Sawtooth', 'Square'], optionValues: [0, 1, 2], default: 2 },
+            { name: 'mainOscLevel', label: 'Main Level', type: 'range', min: 0, max: 1, step: 0.01, default: 1 },
+            { name: 'pwMod', label: 'PW Mod', type: 'range', min: 0, max: 1, step: 0.01, default: 0.2 },
+            { name: 'pwModSource', label: 'PW Source', type: 'select', options: ['LFO', 'Env1', 'Env2'], optionValues: [0, 1, 2], default: 0 },
+            { name: 'freqModLfo', label: 'Freq Mod LFO', type: 'range', min: 0, max: 0.5, step: 0.001, default: 0, scale: 'log' },
+            { name: 'freqModEnv', label: 'Freq Mod Env', type: 'range', min: -0.5, max: 0.5, step: 0.01, default: 0 },
+            { name: 'glide', label: 'Glide', type: 'range', min: 0, max: 2, step: 0.01, default: 0, unit: 's', scale: 'log' }
+        ],
+        'Sub Oscillator': [
+            { name: 'subOscLevel', label: 'Sub Level', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'subOscDetune', label: 'Sub Detune', type: 'range', min: -12, max: 12, step: 1, default: 0, unit: 'semi' },
+            { name: 'noiseLevel', label: 'Noise Level', type: 'range', min: 0, max: 1, step: 0.01, default: 0.1 }
+        ],
+        'Filter': [
+            { name: 'lpFilterType', label: 'Type', type: 'select', options: ['12dB', '24dB'], optionValues: [0, 1], default: 1 },
+            { name: 'lpFilterCutoff', label: 'Cutoff', type: 'range', min: 100, max: 12000, step: 10, default: 300, unit: 'Hz', scale: 'log' },
+            { name: 'lpFilterResonance', label: 'Resonance', type: 'range', min: 0, max: 1, step: 0.01, default: 0.1 },
+            { name: 'lpFilterCutoffEnvSelect', label: 'Env Select', type: 'select', options: ['Env1', 'Env2'], optionValues: [0, 1], default: 0 },
+            { name: 'lpFilterCutoffModEnv', label: 'Env→Filter', type: 'range', min: -1, max: 1, step: 0.01, default: 0.25 },
+            { name: 'lpFilterCutoffModLfo', label: 'LFO→Filter', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'lpFilterTracking', label: 'Key Track', type: 'range', min: 0, max: 2, step: 0.01, default: 1 },
+            { name: 'hpFilterCutoff', label: 'HP Cutoff', type: 'range', min: 10, max: 1000, step: 10, default: 10, unit: 'Hz', scale: 'log' }
+        ],
+        'LFO': [
+            { name: 'lfoFreq', label: 'Frequency', type: 'range', min: 0.05, max: 20, step: 0.05, default: 5, unit: 'Hz', scale: 'log' },
+            { name: 'lfoWaveShape', label: 'Wave Shape', type: 'select', options: ['Sine', 'Triangle', 'Sawtooth', 'Square', 'S&H'], optionValues: [0, 1, 2, 3, 4], default: 0 },
+            { name: 'lfoFade', label: 'Fade', type: 'range', min: -30, max: 30, step: 1, default: 0, unit: 'dB' }
+        ],
+        'Envelope 1 (Amp)': [
+            { name: 'env1Attack', label: 'Attack', type: 'range', min: 0.002, max: 5, step: 0.001, default: 0.01, unit: 's', scale: 'log' },
+            { name: 'env1Decay', label: 'Decay', type: 'range', min: 0.002, max: 10, step: 0.001, default: 0.3, unit: 's', scale: 'log' },
+            { name: 'env1Sustain', label: 'Sustain', type: 'range', min: 0, max: 1, step: 0.01, default: 0.5 },
+            { name: 'env1Release', label: 'Release', type: 'range', min: 0.002, max: 10, step: 0.001, default: 0.5, unit: 's', scale: 'log' }
+        ],
+        'Envelope 2 (Filter)': [
+            { name: 'env2Attack', label: 'Attack', type: 'range', min: 0.002, max: 5, step: 0.001, default: 0.01, unit: 's', scale: 'log' },
+            { name: 'env2Decay', label: 'Decay', type: 'range', min: 0.002, max: 10, step: 0.001, default: 0.3, unit: 's', scale: 'log' },
+            { name: 'env2Sustain', label: 'Sustain', type: 'range', min: 0, max: 1, step: 0.01, default: 0.5 },
+            { name: 'env2Release', label: 'Release', type: 'range', min: 0.002, max: 10, step: 0.001, default: 0.5, unit: 's', scale: 'log' }
+        ],
+        'Amp & Effects': [
+            { name: 'amp', label: 'Amp Level', type: 'range', min: 0, max: 11, step: 0.1, default: 0.5 },
+            { name: 'ampMod', label: 'Amp Mod', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'ringModFreq', label: 'Ring Mod Freq', type: 'range', min: 10, max: 300, step: 1, default: 50, unit: 'Hz', scale: 'log' },
+            { name: 'ringModMix', label: 'Ring Mod Mix', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'chorusMix', label: 'Chorus Mix', type: 'range', min: 0, max: 1, step: 0.01, default: 0.8 }
+        ]
+    },
+    
+    vinegar: {
+        'VCO': [
+            { name: 'glide', label: 'Glide', type: 'range', min: 0, max: 5, step: 0.01, default: 0, unit: 's', scale: 'log' },
+            { name: 'drift', label: 'Drift', type: 'range', min: 0, max: 1, step: 0.01, default: 0 }
+        ],
+        'Waveshaping': [
+            { name: 'waveShape', label: 'Wave Shape', type: 'range', min: 0, max: 1, step: 0.01, default: 0.5 },
+            { name: 'waveFolds', label: 'Wave Folds', type: 'range', min: 0, max: 3, step: 0.01, default: 0 }
+        ],
+        'FM': [
+            { name: 'fmLowRatio', label: 'FM Low Ratio', type: 'range', min: 0.1, max: 1, step: 0.01, default: 0.66 },
+            { name: 'fmLowAmount', label: 'FM Low Amount', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'fmHighRatio', label: 'FM High Ratio', type: 'range', min: 1, max: 10, step: 0.1, default: 3.3 },
+            { name: 'fmHighAmount', label: 'FM High Amount', type: 'range', min: 0, max: 1, step: 0.01, default: 0 }
+        ],
+        'LPG Envelope': [
+            { name: 'envType', label: 'Type', type: 'select', options: ['AR', 'ADSR'], optionValues: [0, 1], default: 0 },
+            { name: 'attack', label: 'Attack', type: 'range', min: 0.003, max: 8, step: 0.001, default: 0.04, unit: 's', scale: 'log' },
+            { name: 'peak', label: 'Peak', type: 'range', min: 100, max: 10000, step: 10, default: 10000, unit: 'Hz', scale: 'log' },
+            { name: 'decay', label: 'Decay', type: 'range', min: 0.01, max: 8, step: 0.01, default: 1, unit: 's', scale: 'log' },
+            { name: 'amp', label: 'Amp Level', type: 'range', min: 0, max: 11, step: 0.1, default: 1 }
+        ],
+        'LFO': [
+            { name: 'lfoShape', label: 'Shape', type: 'select', options: ['Triangle', 'Sawtooth', 'Square', 'S&H'], optionValues: [0, 1, 2, 3], default: 0 },
+            { name: 'lfoFreq', label: 'Frequency', type: 'range', min: 0.001, max: 10, step: 0.001, default: 0.5, unit: 'Hz', scale: 'log' },
+            { name: 'lfo_to_freq_amount', label: 'LFO→Freq', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'lfo_to_wave_shape_amount', label: 'LFO→Shape', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'lfo_to_wave_folds_amount', label: 'LFO→Folds', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'lfo_to_fm_low_amount', label: 'LFO→FM Low', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'lfo_to_fm_high_amount', label: 'LFO→FM High', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'lfo_to_attack_amount', label: 'LFO→Attack', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'lfo_to_peak_amount', label: 'LFO→Peak', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'lfo_to_decay_amount', label: 'LFO→Decay', type: 'range', min: 0, max: 1, step: 0.01, default: 0 },
+            { name: 'lfo_to_reverb_mix_amount', label: 'LFO→Reverb', type: 'range', min: 0, max: 1, step: 0.01, default: 0 }
+        ],
+        'Reverb': [
+            { name: 'reverbMix', label: 'Reverb Mix', type: 'range', min: 0, max: 1, step: 0.01, default: 0 }
+        ]
+    }
+};
+
+function formatParamValue(value, param) {
+    if (param.scale === 'log') {
+        return value.toFixed(3) + (param.unit || '');
+    }
+    if (param.unit === 'Hz' || param.unit === 's') {
+        return value.toFixed(2) + param.unit;
+    }
+    if (param.unit === 'cents' || param.unit === 'semi') {
+        return Math.round(value) + param.unit;
+    }
+    if (param.unit === 'dB') {
+        return value.toFixed(1) + param.unit;
+    }
+    if (param.step >= 1) {
+        return Math.round(value).toString();
+    }
+    return value.toFixed(2);
+}
+
+function getParamDisplayValue(value, param) {
+    if (param.type === 'select') {
+        if (param.optionValues) {
+            const index = param.optionValues.indexOf(value);
+            return param.options[index] || value;
+        }
+        return value;
+    }
+    return formatParamValue(value, param);
+}
+
+// ============================================================================
+// MAIN APPLICATION CLASS
+// ============================================================================
+
 class GestaltApp {
     constructor() {
         this.audioContext = null;
         this.engine = null;
         this.delay = null;
-        this.palette = null; // NEW: Keyboard-spanning palette
-        this.player = null;  // NEW: Event-based player
+        this.palette = null;
+        this.player = null;
         this.midiHandler = null;
         this.keyboardHandler = null;
         this.recorder = null;
@@ -31,6 +209,11 @@ class GestaltApp {
         this.nonMusicianGrid = new Map();
         this.lockedNonMusicianSlots = new Set();
         this.nonMusicianOctave = 3;
+        
+        // Synth parameters panel
+        this.synthParamsVisible = false;
+        this.currentEngineType = 'honey';
+        this.synthParamListeners = new Map();
         
         // UI element references
         this.elements = {};
@@ -55,6 +238,11 @@ class GestaltApp {
             randomizePatch: document.getElementById('randomizePatch'),
             polyphony: document.getElementById('polyphony'),
             polyphonyValue: document.getElementById('polyphonyValue'),
+            
+            // Synth params panel
+            viewSynthBtn: document.getElementById('viewSynthBtn'),
+            synthParamsPanel: document.getElementById('synthParamsPanel'),
+            synthParamsContainer: document.getElementById('synthParamsContainer'),
             
             // Harmony controls
             rootNote: document.getElementById('rootNote'),
@@ -141,12 +329,11 @@ class GestaltApp {
         this.delay = new MimeophonDelay(this.audioContext);
         
         try {
-            await this.delay.ensureReady();  // Wait for worklet to load
+            await this.delay.ensureReady();
             this.delay.connect(this.masterGain);
             console.log('[GestaltApp] Mimeophon delay ready');
         } catch (error) {
             console.error('[GestaltApp] Failed to initialize Mimeophon delay:', error);
-            // Continue without delay if it fails
             this.delay = null;
         }
         
@@ -158,17 +345,17 @@ class GestaltApp {
             this.engine.connectSend(this.delay.input);
         }
         
-        // Create keyboard-spanning gesture palette (NEW!)
+        // Create keyboard-spanning gesture palette
         console.log('[GestaltApp] Creating keyboard gesture palette...');
         this.palette = new KeyboardGesturePalette({
-            minSlot: 36,  // C2
-            maxSlot: 96,  // C7
+            minSlot: 36,
+            maxSlot: 96,
             root: this.elements.rootNote.value,
             scale: this.elements.scaleMode.value,
             tempo: parseInt(this.elements.tempo.value)
         });
         
-        // Create event-based gesture player (NEW!)
+        // Create event-based gesture player
         this.player = new EventGesturePlayer(this.engine, this.palette);
         
         // Print palette stats
@@ -226,7 +413,13 @@ class GestaltApp {
         this.elements.randomizePatch.addEventListener('click', () => {
             if (this.engine) {
                 this.engine.randomPatch();
+                this.updateSynthParamDisplays();
             }
+        });
+        
+        // View synth params toggle
+        this.elements.viewSynthBtn?.addEventListener('click', () => {
+            this.toggleSynthParams();
         });
         
         // Polyphony
@@ -278,14 +471,13 @@ class GestaltApp {
                 this.generateNonMusicianGrid({ respectLocks: true, reshuffle: true });
                 this.buildPadGrid();
             } else if (this.palette) {
-                // Randomize distribution and regenerate
                 this.palette.randomizeDistribution();
                 this.updateKnobLabels();
                 this.buildPadGrid();
             }
         });
 
-        // Evolve unlocked gestures using locked references
+        // Evolve unlocked gestures
         this.elements.evolveMotif.addEventListener('click', () => {
             console.log('[GestaltApp] Evolve button clicked');
             if (this.actionMode === 'nonMusician') {
@@ -303,7 +495,7 @@ class GestaltApp {
             this.toggleGridVisibility();
         });
         
-        // Delay controls - with null checks for delay
+        // Delay controls
         this.elements.delaySend.addEventListener('input', (e) => {
             const value = parseInt(e.target.value);
             this.elements.delaySendValue.textContent = `${value}%`;
@@ -401,8 +593,283 @@ class GestaltApp {
         });
     }
 
+    // ============================================================================
+    // SYNTH PARAMETERS PANEL METHODS
+    // ============================================================================
+
     /**
-     * Toggle action mode between motif (gestures), musician (quantized notes), and non-musician (chord atlas)
+     * Toggle synth parameters panel visibility
+     */
+    toggleSynthParams() {
+        this.synthParamsVisible = !this.synthParamsVisible;
+        
+        if (this.elements.synthParamsPanel) {
+            this.elements.synthParamsPanel.classList.toggle('hidden', !this.synthParamsVisible);
+        }
+        
+        if (this.elements.viewSynthBtn) {
+            this.elements.viewSynthBtn.classList.toggle('active', this.synthParamsVisible);
+        }
+        
+        if (this.synthParamsVisible) {
+            this.buildSynthParams();
+        }
+    }
+
+    /**
+     * Build synth parameter controls based on current engine
+     */
+    buildSynthParams() {
+        if (!this.elements.synthParamsContainer || !this.engine) return;
+        
+        const engineType = this.engine.currentEngineType || 'honey';
+        this.currentEngineType = engineType;
+        
+        const params = SYNTH_PARAMETERS[engineType];
+        if (!params) {
+            console.error(`No parameters defined for engine: ${engineType}`);
+            return;
+        }
+        
+        // Clear existing params and listeners
+        this.elements.synthParamsContainer.innerHTML = '';
+        this.synthParamListeners.forEach(listener => listener.remove());
+        this.synthParamListeners.clear();
+        
+        // Build parameter groups
+        Object.entries(params).forEach(([groupName, groupParams]) => {
+            const groupDiv = document.createElement('div');
+            groupDiv.className = 'synth-param-group';
+            
+            const groupTitle = document.createElement('div');
+            groupTitle.className = 'synth-param-group-title';
+            groupTitle.textContent = groupName;
+            groupDiv.appendChild(groupTitle);
+            
+            groupParams.forEach(param => {
+                const paramDiv = document.createElement('div');
+                paramDiv.className = 'synth-param';
+                paramDiv.dataset.paramName = param.name;
+                
+                const label = document.createElement('label');
+                label.textContent = param.label;
+                label.htmlFor = `synth-param-${param.name}`;
+                
+                let control;
+                let valueDisplay;
+                
+                if (param.type === 'range') {
+                    control = document.createElement('input');
+                    control.type = 'range';
+                    control.id = `synth-param-${param.name}`;
+                    control.min = param.min;
+                    control.max = param.max;
+                    control.step = param.step;
+                    control.value = this.getSynthParamValue(param.name) ?? param.default;
+                    
+                    valueDisplay = document.createElement('span');
+                    valueDisplay.className = 'synth-param-value';
+                    valueDisplay.textContent = formatParamValue(parseFloat(control.value), param);
+                    
+                    const updateHandler = (e) => {
+                        const value = parseFloat(e.target.value);
+                        this.setSynthParam(param.name, value);
+                        valueDisplay.textContent = formatParamValue(value, param);
+                    };
+                    
+                    control.addEventListener('input', updateHandler);
+                    this.synthParamListeners.set(param.name, {
+                        remove: () => control.removeEventListener('input', updateHandler)
+                    });
+                    
+                } else if (param.type === 'select') {
+                    control = document.createElement('select');
+                    control.id = `synth-param-${param.name}`;
+                    
+                    param.options.forEach((option, index) => {
+                        const opt = document.createElement('option');
+                        opt.value = param.optionValues ? param.optionValues[index] : option;
+                        opt.textContent = option;
+                        control.appendChild(opt);
+                    });
+                    
+                    const currentValue = this.getSynthParamValue(param.name);
+                    if (currentValue !== undefined) {
+                        control.value = currentValue;
+                    } else {
+                        control.value = param.default;
+                    }
+                    
+                    const changeHandler = (e) => {
+                        const value = param.optionValues ? 
+                            param.optionValues[e.target.selectedIndex] : 
+                            e.target.value;
+                        this.setSynthParam(param.name, value);
+                    };
+                    
+                    control.addEventListener('change', changeHandler);
+                    this.synthParamListeners.set(param.name, {
+                        remove: () => control.removeEventListener('change', changeHandler)
+                    });
+                }
+                
+                paramDiv.appendChild(label);
+                if (control) paramDiv.appendChild(control);
+                if (valueDisplay) paramDiv.appendChild(valueDisplay);
+                
+                groupDiv.appendChild(paramDiv);
+            });
+            
+            this.elements.synthParamsContainer.appendChild(groupDiv);
+        });
+    }
+
+    /**
+     * Get current synth parameter value from engine
+     */
+    getSynthParamValue(paramName) {
+        if (!this.engine) return undefined;
+        
+        const engineType = this.engine.currentEngineType || 'honey';
+        const voicePool = this.engine.voicePool;
+        
+        if (!voicePool || voicePool.length === 0) return undefined;
+        
+        const voice = voicePool[0];
+        
+        if (engineType === 'molly' && voice.params) {
+            return voice.params[paramName];
+        } else if (engineType === 'vinegar') {
+            if (paramName.startsWith('lfo') && !paramName.startsWith('lfo_')) {
+                return voice.lfo?.[paramName.replace('lfo', '').toLowerCase()] ?? 
+                       voice[paramName];
+            }
+            if (paramName.includes('envelope') || paramName === 'attack' || 
+                paramName === 'decay' || paramName === 'peak' || 
+                paramName === 'amp' || paramName === 'envType') {
+                return voice.envelope?.[paramName] ?? voice[paramName];
+            }
+            return voice[paramName];
+        } else if (engineType === 'honey') {
+            if (paramName.startsWith('vcoA')) {
+                return voice.vcoA?.[paramName.replace('vcoA', '').charAt(0).toLowerCase() + 
+                                    paramName.replace('vcoA', '').slice(1)];
+            }
+            if (paramName.startsWith('vcoB') || paramName === 'lfoRate') {
+                const key = paramName.replace('vcoB', '').charAt(0).toLowerCase() + 
+                           paramName.replace('vcoB', '').slice(1);
+                return voice.vcoB?.[key] ?? voice.vcoB?.[paramName];
+            }
+            if (paramName.startsWith('sub')) {
+                return voice.sub?.[paramName.replace('sub', '').charAt(0).toLowerCase() + 
+                                   paramName.replace('sub', '').slice(1)];
+            }
+            if (paramName.startsWith('noise')) {
+                return voice.noise?.[paramName.replace('noise', '').charAt(0).toLowerCase() + 
+                                     paramName.replace('noise', '').slice(1)];
+            }
+            if (paramName.startsWith('filter')) {
+                if (paramName === 'filterType') return voice.filter?.type;
+                if (paramName === 'filterFreq') return voice.filter?.frequency?.value;
+                if (paramName === 'filterRes') return voice.filter?.Q?.value;
+                const key = paramName.replace('filter', '').charAt(0).toLowerCase() + 
+                           paramName.replace('filter', '').slice(1);
+                return voice.filterMod?.[key];
+            }
+            if (paramName.startsWith('env')) {
+                if (paramName === 'envToFilter') return voice.filterMod?.envAmount;
+                if (paramName === 'envRate') return voice.envelope?.rateRange;
+                const key = paramName.replace('env', '').charAt(0).toLowerCase() + 
+                           paramName.replace('env', '').slice(1);
+                return voice.envelope?.[key];
+            }
+            if (paramName.startsWith('drive')) {
+                return voice.drive?.[paramName.replace('drive', '').charAt(0).toLowerCase() + 
+                                    paramName.replace('drive', '').slice(1)];
+            }
+            if (paramName.startsWith('lfo')) {
+                const key = paramName.replace('lfo', '').charAt(0).toLowerCase() + 
+                           paramName.replace('lfo', '').slice(1);
+                return voice.lfoMod?.[key] ?? voice.lfoAmounts?.[key];
+            }
+            if (paramName === 'pulseWidth') return voice.vcoA?.pulseWidth;
+            if (paramName === 'pwmAmount') return voice.vcoA?.pwmAmount;
+            if (paramName === 'pwmSource') return voice.vcoA?.pwmSource;
+        }
+        
+        return undefined;
+    }
+
+    /**
+     * Set synth parameter on engine
+     */
+    setSynthParam(paramName, value) {
+        if (!this.engine) return;
+        
+        const engineType = this.engine.currentEngineType || 'honey';
+        
+        // Update all voices in the pool
+        this.engine.voicePool.forEach(voice => {
+            voice.setParam(paramName, value);
+        });
+        
+        console.log(`[GestaltApp] Set ${engineType} param ${paramName} = ${value}`);
+    }
+
+    /**
+     * Update synth parameter displays (call after randomPatch)
+     */
+    updateSynthParamDisplays() {
+        if (!this.synthParamsVisible || !this.elements.synthParamsContainer) return;
+        
+        const engineType = this.engine?.currentEngineType || 'honey';
+        
+        // If engine changed, rebuild entirely
+        if (engineType !== this.currentEngineType) {
+            this.buildSynthParams();
+            return;
+        }
+        
+        // Update existing parameter values
+        const params = SYNTH_PARAMETERS[engineType];
+        if (!params) return;
+        
+        Object.values(params).forEach(groupParams => {
+            groupParams.forEach(param => {
+                const paramDiv = this.elements.synthParamsContainer
+                    .querySelector(`[data-param-name="${param.name}"]`);
+                
+                if (!paramDiv) return;
+                
+                const control = paramDiv.querySelector('input, select');
+                const valueDisplay = paramDiv.querySelector('.synth-param-value');
+                
+                const currentValue = this.getSynthParamValue(param.name);
+                if (currentValue === undefined) return;
+                
+                if (param.type === 'range') {
+                    control.value = currentValue;
+                    if (valueDisplay) {
+                        valueDisplay.textContent = formatParamValue(currentValue, param);
+                    }
+                } else if (param.type === 'select') {
+                    if (param.optionValues) {
+                        const index = param.optionValues.indexOf(currentValue);
+                        if (index >= 0) control.selectedIndex = index;
+                    } else {
+                        control.value = currentValue;
+                    }
+                }
+            });
+        });
+    }
+
+    // ============================================================================
+    // EXISTING METHODS (CONTINUE BELOW)
+    // ============================================================================
+
+    /**
+     * Toggle action mode between motif, musician, and non-musician
      */
     setActionMode(mode) {
         if (!['motif', 'musician', 'nonMusician'].includes(mode) || mode === this.actionMode) return;
@@ -449,6 +916,11 @@ class GestaltApp {
         
         // Randomize new patch
         this.engine.randomPatch();
+        
+        // Rebuild synth params if visible
+        if (this.synthParamsVisible) {
+            this.buildSynthParams();
+        }
     }
     
     /**
@@ -491,12 +963,10 @@ class GestaltApp {
         const midiOffset = this.midiHandler?.padNoteOffset ?? 33;
         const padCount = this.midiHandler?.padCount ?? 32;
 
-        // If we received a MIDI note in the pad range, map it to our grid window
         if (slotId >= midiOffset && slotId < midiOffset + padCount) {
             return this.gridStartSlot + (slotId - midiOffset);
         }
 
-        // If we received a raw pad index (from keyboard handler), map directly
         if (slotId >= 0 && slotId < padCount) {
             return this.gridStartSlot + slotId;
         }
@@ -551,7 +1021,7 @@ class GestaltApp {
     }
 
     /**
-     * Get a label for the current scale (e.g. "C Major")
+     * Get a label for the current scale
      */
     getScaleLabel() {
         const root = this.elements.rootNote.value;
@@ -625,11 +1095,8 @@ class GestaltApp {
         diatonicChords.forEach(chord => {
             const rootMidi = chord.notes[0];
 
-            // Core triad
-            addChordVariant(rootMidi, chord.type, 'Triad');
-
-            // Extensions and colors
             if (chord.type === 'major') {
+                addChordVariant(rootMidi, 'major', 'Triad');
                 addChordVariant(rootMidi, 'maj7', '7th');
                 addChordVariant(rootMidi, 'dom7', 'Dominant');
                 addChordVariant(rootMidi, 'add9', 'Add9');
@@ -709,7 +1176,7 @@ class GestaltApp {
 
         const newGrid = new Map();
 
-        // Bottom row: scale tones with octave selection
+        // Bottom row: scale tones
         for (let col = 0; col < 8; col++) {
             const slotId = startSlot + col;
             const note = noteRow[col % noteRow.length];
@@ -722,7 +1189,7 @@ class GestaltApp {
             });
         }
 
-        // Top 3 rows: chords, dyads, and voicings
+        // Top 3 rows: chords
         const shuffled = this.shuffleArray(chordPool);
         let poolIndex = 0;
 
@@ -827,10 +1294,8 @@ class GestaltApp {
         
         this.elements.padGrid.innerHTML = '';
 
-        // Show 32 pads starting from slot 48 (C3)
         const startSlot = this.gridStartSlot;
         
-        // Create 32 pads (4 rows x 8 columns)
         for (let row = 3; row >= 0; row--) {
             for (let col = 0; col < 8; col++) {
                 const padIndex = row * 8 + col;
@@ -949,7 +1414,7 @@ class GestaltApp {
     }
     
     /**
-     * Handle pad on (press) - now handles MIDI note directly as slot
+     * Handle pad on (press)
      */
     handlePadOn(slotId, velocity) {
         console.log(`[GestaltApp] handlePadOn(slot ${slotId}, ${velocity})`);
@@ -994,7 +1459,6 @@ class GestaltApp {
             return;
         }
         
-        // Trigger gesture for slot as a one-shot (no looping)
         const result = this.player.triggerSlot(resolvedSlot, velocity, { forceOneShot: true });
 
         if (!result?.gesture) {
@@ -1002,11 +1466,9 @@ class GestaltApp {
             return;
         }
 
-        // Update UI
         this.updateActivePad(resolvedSlot, true);
         this.updateActiveGestureDisplay(result.gesture, result.isLooping);
         
-        // Flash MIDI indicator
         if (this.midiHandler?.hasRecentActivity(200)) {
             this.elements.midiStatus.classList.add('active');
             setTimeout(() => {
@@ -1056,26 +1518,22 @@ class GestaltApp {
         this.player.releaseSlot(resolvedSlot);
         this.updateActivePad(resolvedSlot, false);
 
-        // Clear gesture display if no pads active
         if (this.player.getActiveGestureCount() === 0) {
             this.updateActiveGestureDisplay(null);
         }
     }
     
     /**
-     * Handle knob change (for future: could adjust palette parameters)
+     * Handle knob change
      */
     handleKnobChange(knobIndex, delta, accumulator) {
         console.log(`[GestaltApp] Knob ${knobIndex}: delta=${delta}`);
         
-        // For now, just highlight the knob
         this.highlightKnob(knobIndex);
-        
-        // Could implement: adjust density, complexity, tension for a region
     }
     
     /**
-     * Update knob labels (show style distribution info)
+     * Update knob labels
      */
     updateKnobLabels() {
         if (!this.palette) return;
@@ -1161,21 +1619,18 @@ class GestaltApp {
         if (!this.recorder) return;
         
         if (this.recorder.isRecording) {
-            // Stop recording
             this.lastRecordingBlob = this.recorder.stop();
             
             this.elements.recordBtn.classList.remove('recording');
             this.elements.recordBtn.querySelector('.record-text').textContent = 'REC';
             this.elements.downloadBtn.classList.remove('hidden');
         } else {
-            // Start recording
             this.recorder.start();
             
             this.elements.recordBtn.classList.add('recording');
             this.elements.recordBtn.querySelector('.record-text').textContent = 'STOP';
             this.elements.downloadBtn.classList.add('hidden');
             
-            // Update time display
             this.recorder.onTimeUpdate = (time) => {
                 this.elements.recordTime.textContent = WAVRecorder.formatTime(time);
             };
