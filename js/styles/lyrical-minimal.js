@@ -1,8 +1,8 @@
 // Lyrical Minimal Style — Satie / Sakamoto / Frahm
 // Simple repeating cells, limited notes, elegant and tonal
 
-import { StyleGenerator } from '../style-generator.js';
-import { Gesture, GestureEvent, SeededRandom } from '../gesture-core.js';
+import { StyleGenerator } from './style-generator.js';
+import { Gesture, GestureEvent, SeededRandom } from './gesture-core.js';
 
 export class LyricalMinimalGenerator extends StyleGenerator {
     constructor() {

@@ -1,8 +1,8 @@
 // EXAMPLE STYLE TEMPLATE
 // Copy this file and modify to create your own gesture generator
 
-import { StyleGenerator } from '../style-generator.js';
-import { Gesture, GestureEvent, SeededRandom } from '../gesture-core.js';
+import { StyleGenerator } from './style-generator.js';
+import { Gesture, GestureEvent, SeededRandom } from './gesture-core.js';
 
 /**
  * Example: Ambient Texture Generator
