@@ -7,7 +7,7 @@ import { EventGesturePlayer } from './event-gesture-player.js';
 import { MimeophonDelay } from './mimeophon-delay.js';
 import { MIDIHandler, KeyboardHandler } from './midi-handler.js';
 import { WAVRecorder } from './recorder.js';
-import { NOTE_NAMES, quantizeToScale } from './harmony.js';
+import { NOTE_NAMES, SCALES, getScaleNotes } from './harmony.js';
 
 class GestaltApp {
     constructor() {
@@ -456,10 +456,49 @@ class GestaltApp {
     }
 
     /**
-     * Quantize an incoming slot/pad note to the current scale
+     * Build a scale note list that spans the full pad grid without repeating pitches
+     */
+    getMusicianScaleNotes() {
+        const root = this.elements.rootNote.value;
+        const scale = this.elements.scaleMode.value;
+        const padCount = this.midiHandler?.padCount ?? 32;
+
+        const scaleLength = (SCALES[scale] || SCALES.major).length;
+        const startOctave = Math.floor(this.gridStartSlot / 12) - 1;
+        const extraOctaves = Math.ceil((padCount + 1) / scaleLength) + 2;
+
+        const octaveLow = Math.max(-1, startOctave - 2);
+        const octaveHigh = Math.min(10, octaveLow + extraOctaves);
+
+        return getScaleNotes(root, scale, octaveLow, octaveHigh, 0, 127);
+    }
+
+    /**
+     * Quantize an incoming slot/pad note to the current scale without duplicate pitches
      */
     quantizeSlot(slotId) {
-        return quantizeToScale(slotId, this.elements.rootNote.value, this.elements.scaleMode.value);
+        const scaleNotes = this.getMusicianScaleNotes();
+        if (!scaleNotes.length) return slotId;
+
+        const padOffset = slotId - this.gridStartSlot;
+
+        const nearestIndex = scaleNotes.reduce((closestIdx, note, idx) => {
+            const currentDistance = Math.abs(note - this.gridStartSlot);
+            const bestDistance = Math.abs(scaleNotes[closestIdx] - this.gridStartSlot);
+            return currentDistance < bestDistance ? idx : closestIdx;
+        }, 0);
+
+        const targetIndex = nearestIndex + padOffset;
+
+        if (targetIndex < 0) {
+            return scaleNotes[0];
+        }
+
+        if (targetIndex >= scaleNotes.length) {
+            return scaleNotes[scaleNotes.length - 1];
+        }
+
+        return scaleNotes[targetIndex];
     }
 
     /**
