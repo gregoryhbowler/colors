@@ -742,23 +742,15 @@ class GestaltApp {
             console.warn(`[GestaltApp] No engine for param ${paramName}`);
             return undefined;
         }
-        
-        const engineType = this.currentEngineType;
+
+        const engineType = this.engine.currentEngineType || this.currentEngineType || 'honey';
         const voicePool = this.engine.voicePool;
-        
+
         if (!voicePool || voicePool.length === 0) {
             console.warn(`[GestaltApp] No voice pool for param ${paramName}`);
             return undefined;
         }
-        if (!this.engine) return undefined;
-        
-        const voice = voicePool[0];
-        
-        const engineType = this.engine.currentEngineType || 'honey';
-        const voicePool = this.engine.voicePool;
-        
-        if (!voicePool || voicePool.length === 0) return undefined;
-        
+
         const voice = voicePool[0];
         
         if (engineType === 'molly' && voice.params) {
