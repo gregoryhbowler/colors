@@ -1,8 +1,9 @@
-// GESTALT — Main Application Controller
-// Ties together all modules and handles UI
+// COLORS — Main Application Controller
+// Now with keyboard-spanning gesture palette system
 
 import { PolyphonicEngine } from './polyphonic-engine.js';
-import { GestureGrid, GesturePlayer, GESTURE_TYPES } from './gesture-system.js';
+import { KeyboardGesturePalette } from './keyboard-palette.js';
+import { EventGesturePlayer } from './event-gesture-player.js';
 import { MimeophonDelay } from './mimeophon-delay.js';
 import { MIDIHandler, KeyboardHandler } from './midi-handler.js';
 import { WAVRecorder } from './recorder.js';
@@ -12,8 +13,8 @@ class GestaltApp {
         this.audioContext = null;
         this.engine = null;
         this.delay = null;
-        this.grid = null;
-        this.player = null;
+        this.palette = null; // NEW: Keyboard-spanning palette
+        this.player = null;  // NEW: Event-based player
         this.midiHandler = null;
         this.keyboardHandler = null;
         this.recorder = null;
@@ -51,13 +52,9 @@ class GestaltApp {
             rootNote: document.getElementById('rootNote'),
             scaleMode: document.getElementById('scaleMode'),
             
-            // Tempo & Strum
+            // Tempo
             tempo: document.getElementById('tempo'),
             tempoValue: document.getElementById('tempoValue'),
-            strumSpeed: document.getElementById('strumSpeed'),
-            strumSpeedValue: document.getElementById('strumSpeedValue'),
-            strumVariance: document.getElementById('strumVariance'),
-            strumVarianceValue: document.getElementById('strumVarianceValue'),
             
             // Actions
             regenerateGestures: document.getElementById('regenerateGestures'),
@@ -109,7 +106,7 @@ class GestaltApp {
     async init() {
         if (this.isInitialized) return;
         
-        console.log('[GestaltApp] Initializing...');
+        console.log('[GestaltApp] Initializing with keyboard-spanning gesture system...');
         
         // Create audio context
         this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -135,14 +132,22 @@ class GestaltApp {
         this.engine.connect(this.masterGain);
         this.engine.connectSend(this.delay.input);
         
-        // Create gesture system
-        this.grid = new GestureGrid();
-        this.player = new GesturePlayer(this.engine);
-        this.player.setGrid(this.grid);
+        // Create keyboard-spanning gesture palette (NEW!)
+        console.log('[GestaltApp] Creating keyboard gesture palette...');
+        this.palette = new KeyboardGesturePalette({
+            minSlot: 36,  // C2
+            maxSlot: 96,  // C7
+            root: this.elements.rootNote.value,
+            scale: this.elements.scaleMode.value,
+            tempo: parseInt(this.elements.tempo.value)
+        });
         
-        // Generate initial grid
-        console.log('[GestaltApp] Generating initial grid...');
-        this.grid.regenerate();
+        // Create event-based gesture player (NEW!)
+        this.player = new EventGesturePlayer(this.engine, this.palette);
+        
+        // Print palette stats
+        const stats = this.palette.getStats();
+        console.log('[GestaltApp] Palette stats:', stats);
         
         // Create recorder
         this.recorder = new WAVRecorder(this.audioContext);
@@ -215,34 +220,17 @@ class GestaltApp {
         this.elements.tempo.addEventListener('input', (e) => {
             const value = parseInt(e.target.value);
             this.elements.tempoValue.textContent = value;
-            if (this.grid) {
-                this.grid.setTempo(value);
-            }
-        });
-        
-        // Strum parameters
-        this.elements.strumSpeed.addEventListener('input', (e) => {
-            const value = parseInt(e.target.value);
-            this.elements.strumSpeedValue.textContent = `${value}ms`;
-            if (this.grid) {
-                this.grid.strumSpeed = value;
-            }
-        });
-        
-        this.elements.strumVariance.addEventListener('input', (e) => {
-            const value = parseInt(e.target.value);
-            this.elements.strumVarianceValue.textContent = `${value}%`;
-            if (this.grid) {
-                this.grid.strumVariance = value / 100;
+            if (this.palette) {
+                this.palette.setTempo(value);
             }
         });
         
         // Regenerate grid
         this.elements.regenerateGestures.addEventListener('click', () => {
             console.log('[GestaltApp] Regenerate button clicked');
-            if (this.grid) {
-                // Randomize column types for variety
-                this.grid.randomizeColumnTypes();
+            if (this.palette) {
+                // Randomize distribution and regenerate
+                this.palette.randomizeDistribution();
                 this.updateKnobLabels();
                 this.buildPadGrid();
             }
@@ -346,7 +334,7 @@ class GestaltApp {
         this.elements.downloadBtn.addEventListener('click', () => {
             if (this.lastRecordingBlob) {
                 const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
-                WAVRecorder.downloadBlob(this.lastRecordingBlob, `gestalt-${timestamp}.wav`);
+                WAVRecorder.downloadBlob(this.lastRecordingBlob, `colors-${timestamp}.wav`);
             }
         });
     }
@@ -388,14 +376,14 @@ class GestaltApp {
      * Update harmony (root/scale)
      */
     updateHarmony() {
-        if (!this.grid) return;
+        if (!this.palette) return;
         
         const root = this.elements.rootNote.value;
         const scale = this.elements.scaleMode.value;
         
         console.log(`[GestaltApp] Updating harmony: ${root} ${scale}`);
         
-        this.grid.setHarmony(root, scale);
+        this.palette.setHarmony(root, scale);
         this.buildPadGrid();
     }
     
@@ -412,29 +400,34 @@ class GestaltApp {
     }
     
     /**
-     * Build the visual pad grid
+     * Build the visual pad grid (showing 32-pad window into keyboard)
      */
     buildPadGrid() {
-        if (!this.grid) return;
+        if (!this.palette) return;
         
         console.log('[GestaltApp] Building pad grid...');
         
         this.elements.padGrid.innerHTML = '';
         
+        // Show 32 pads starting from slot 48 (C3)
+        const startSlot = 48;
+        
         // Create 32 pads (4 rows x 8 columns)
-        // Note: Row 0 is bottom, Row 3 is top (for Move layout)
         for (let row = 3; row >= 0; row--) {
             for (let col = 0; col < 8; col++) {
                 const padIndex = row * 8 + col;
-                const gesture = this.grid.getPad(padIndex);
+                const slotId = startSlot + padIndex;
+                const gesture = this.palette.getGesture(slotId);
+                const config = this.palette.getSlotConfig(slotId);
                 
                 const pad = document.createElement('div');
                 pad.className = 'pad';
                 pad.dataset.index = padIndex;
+                pad.dataset.slot = slotId;
                 
-                if (gesture) {
+                if (gesture && config) {
                     pad.innerHTML = `
-                        <span class="pad-type">${gesture.typeName}</span>
+                        <span class="pad-type">${gesture.typeId}</span>
                         <span class="pad-chord">${gesture.display || ''}</span>
                     `;
                 } else {
@@ -444,34 +437,30 @@ class GestaltApp {
                     `;
                 }
                 
-                // Mouse/touch events for grid interaction
+                // Mouse/touch events
                 pad.addEventListener('mousedown', (e) => {
                     e.preventDefault();
-                    console.log(`[UI] Pad ${padIndex} mousedown`);
-                    this.handlePadOn(padIndex, 1);
+                    this.handlePadOn(slotId, 1);
                 });
                 
                 pad.addEventListener('mouseup', () => {
-                    console.log(`[UI] Pad ${padIndex} mouseup`);
-                    this.handlePadOff(padIndex);
+                    this.handlePadOff(slotId);
                 });
                 
                 pad.addEventListener('mouseleave', () => {
                     if (pad.classList.contains('active')) {
-                        this.handlePadOff(padIndex);
+                        this.handlePadOff(slotId);
                     }
                 });
                 
-                // Touch support
                 pad.addEventListener('touchstart', (e) => {
                     e.preventDefault();
-                    console.log(`[UI] Pad ${padIndex} touchstart`);
-                    this.handlePadOn(padIndex, 1);
+                    this.handlePadOn(slotId, 1);
                 });
                 
                 pad.addEventListener('touchend', (e) => {
                     e.preventDefault();
-                    this.handlePadOff(padIndex);
+                    this.handlePadOff(slotId);
                 });
                 
                 this.elements.padGrid.appendChild(pad);
@@ -482,14 +471,14 @@ class GestaltApp {
     }
     
     /**
-     * Handle pad on (press)
+     * Handle pad on (press) - now handles MIDI note directly as slot
      */
-    handlePadOn(padIndex, velocity) {
-        console.log(`[GestaltApp] handlePadOn(${padIndex}, ${velocity})`);
+    handlePadOn(slotId, velocity) {
+        console.log(`[GestaltApp] handlePadOn(slot ${slotId}, ${velocity})`);
         
         if (!this.isInitialized) {
             console.log('[GestaltApp] Not initialized, initializing first...');
-            this.init().then(() => this.handlePadOn(padIndex, velocity));
+            this.init().then(() => this.handlePadOn(slotId, velocity));
             return;
         }
         
@@ -498,16 +487,16 @@ class GestaltApp {
             return;
         }
         
-        // Trigger gesture
-        const gesture = this.player.triggerPad(padIndex, velocity);
+        // Trigger gesture for slot
+        const gesture = this.player.triggerSlot(slotId, velocity);
         
         if (!gesture) {
-            console.error(`[GestaltApp] No gesture returned for pad ${padIndex}`);
+            console.error(`[GestaltApp] No gesture returned for slot ${slotId}`);
             return;
         }
         
         // Update UI
-        this.updateActivePad(padIndex, true);
+        this.updateActivePad(slotId, true);
         this.updateActiveGestureDisplay(gesture);
         
         // Flash MIDI indicator
@@ -522,62 +511,44 @@ class GestaltApp {
     /**
      * Handle pad off (release)
      */
-    handlePadOff(padIndex) {
+    handlePadOff(slotId) {
         if (!this.player) return;
         
-        this.player.releasePad(padIndex);
-        this.updateActivePad(padIndex, false);
+        this.player.releaseSlot(slotId);
+        this.updateActivePad(slotId, false);
         
         // Clear gesture display if no pads active
-        if (this.player.activeGestures.size === 0) {
+        if (this.player.getActiveGestureCount() === 0) {
             this.updateActiveGestureDisplay(null);
         }
     }
     
     /**
-     * Handle knob change (continuous encoder)
+     * Handle knob change (for future: could adjust palette parameters)
      */
     handleKnobChange(knobIndex, delta, accumulator) {
-        if (!this.grid) return;
+        console.log(`[GestaltApp] Knob ${knobIndex}: delta=${delta}`);
         
-        // Get current type for this column
-        const currentType = this.grid.columnTypes[knobIndex];
-        
-        // Calculate new type based on delta direction
-        let newType;
-        if (delta > 0) {
-            newType = (currentType + 1) % GESTURE_TYPES.length;
-        } else {
-            newType = (currentType - 1 + GESTURE_TYPES.length) % GESTURE_TYPES.length;
-        }
-        
-        console.log(`[GestaltApp] Knob ${knobIndex}: ${GESTURE_TYPES[currentType].name} -> ${GESTURE_TYPES[newType].name}`);
-        
-        // Update column type
-        this.grid.setColumnType(knobIndex, newType);
-        
-        // Update UI
-        this.updateKnobLabels();
-        this.buildPadGrid();
-        
-        // Highlight active knob
+        // For now, just highlight the knob
         this.highlightKnob(knobIndex);
+        
+        // Could implement: adjust density, complexity, tension for a region
     }
     
     /**
-     * Update knob labels
+     * Update knob labels (show style distribution info)
      */
     updateKnobLabels() {
-        if (!this.grid) return;
+        if (!this.palette) return;
         
-        console.log('[GestaltApp] Updating knob labels...');
+        const stats = this.palette.getStats();
+        const styles = Object.keys(stats.styleDistribution).slice(0, 8);
         
         for (let i = 0; i < 8; i++) {
-            const typeName = this.grid.getColumnTypeName(i);
-            if (this.elements.knobLabels[i]) {
-                this.elements.knobLabels[i].textContent = typeName;
+            if (this.elements.knobLabels[i] && styles[i]) {
+                const styleName = styles[i].substring(0, 6).toUpperCase();
+                this.elements.knobLabels[i].textContent = styleName;
             }
-            console.log(`[GestaltApp] Column ${i}: ${typeName}`);
         }
     }
     
@@ -589,7 +560,6 @@ class GestaltApp {
             indicator.classList.toggle('active', i === knobIndex);
         });
         
-        // Remove highlight after delay
         setTimeout(() => {
             this.elements.knobIndicators[knobIndex]?.classList.remove('active');
         }, 300);
@@ -598,17 +568,14 @@ class GestaltApp {
     /**
      * Update active pad visual state
      */
-    updateActivePad(padIndex, active) {
+    updateActivePad(slotId, active) {
         const pads = this.elements.padGrid.querySelectorAll('.pad');
         
-        // Find the correct pad (accounting for reversed row order in display)
-        const row = Math.floor(padIndex / 8);
-        const col = padIndex % 8;
-        const displayIndex = (3 - row) * 8 + col;
-        
-        if (pads[displayIndex]) {
-            pads[displayIndex].classList.toggle('active', active);
-        }
+        pads.forEach(pad => {
+            if (parseInt(pad.dataset.slot) === slotId) {
+                pad.classList.toggle('active', active);
+            }
+        });
     }
     
     /**
@@ -623,9 +590,12 @@ class GestaltApp {
             return;
         }
         
+        const eventCount = gesture.events.length;
+        const loopStatus = gesture.loopLengthBeats ? `${gesture.loopLengthBeats}bar loop` : 'one-shot';
+        
         this.elements.activeGestureInfo.innerHTML = `
-            <span class="gesture-type">${gesture.typeName}</span>
-            <span class="gesture-notes">${gesture.display}</span>
+            <span class="gesture-type">${gesture.typeId}</span>
+            <span class="gesture-notes">${gesture.display} • ${eventCount} events • ${loopStatus}</span>
         `;
     }
     
@@ -673,15 +643,15 @@ class GestaltApp {
 
 // Initialize app on DOM ready
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('[GESTALT] DOM ready, creating app...');
+    console.log('[COLORS] DOM ready, creating app with keyboard gesture system...');
     
     const app = new GestaltApp();
     app.cacheElements();
     app.setupEventListeners();
     
-    // Initialize on first interaction (for autoplay policy)
+    // Initialize on first interaction
     const initOnInteraction = () => {
-        console.log('[GESTALT] First interaction, initializing...');
+        console.log('[COLORS] First interaction, initializing...');
         app.init();
         document.removeEventListener('click', initOnInteraction);
         document.removeEventListener('keydown', initOnInteraction);
