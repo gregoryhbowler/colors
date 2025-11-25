@@ -7,7 +7,7 @@ import { EventGesturePlayer } from './event-gesture-player.js';
 import { MimeophonDelay } from './mimeophon-delay.js';
 import { MIDIHandler, KeyboardHandler } from './midi-handler.js';
 import { WAVRecorder } from './recorder.js';
-import { NOTE_NAMES, SCALES, getScaleNotes } from './harmony.js';
+import { NOTE_NAMES, SCALES, getScaleNotes, getDiatonicChords, buildChord, generateVoicings, CHORD_TYPES } from './harmony.js';
 
 class GestaltApp {
     constructor() {
@@ -27,6 +27,9 @@ class GestaltApp {
         this.actionMode = 'motif';
         this.activeNotesBySlot = new Map();
         this.gridStartSlot = 48;
+        this.nonMusicianGrid = new Map();
+        this.lockedNonMusicianSlots = new Set();
+        this.nonMusicianOctave = 3;
         
         // UI element references
         this.elements = {};
@@ -63,6 +66,8 @@ class GestaltApp {
             // Actions
             actionModeBtns: document.querySelectorAll('.mode-btn'),
             actionModeHint: document.getElementById('actionModeHint'),
+            nonMusicianOctaveRow: document.getElementById('nonMusicianOctaveRow'),
+            nonMusicianOctave: document.getElementById('nonMusicianOctave'),
             regenerateGestures: document.getElementById('regenerateGestures'),
             evolveMotif: document.getElementById('evolveMotif'),
             toggleGrid: document.getElementById('toggleGrid'),
@@ -239,10 +244,26 @@ class GestaltApp {
             });
         });
 
+        // Non-musician octave selection
+        if (this.elements.nonMusicianOctave) {
+            this.elements.nonMusicianOctave.addEventListener('input', (e) => {
+                const value = Math.min(7, Math.max(1, parseInt(e.target.value) || this.nonMusicianOctave));
+                e.target.value = value;
+                this.nonMusicianOctave = value;
+                if (this.actionMode === 'nonMusician') {
+                    this.generateNonMusicianGrid({ respectLocks: true });
+                    this.buildPadGrid();
+                }
+            });
+        }
+
         // Regenerate grid
         this.elements.regenerateGestures.addEventListener('click', () => {
             console.log('[GestaltApp] Regenerate button clicked');
-            if (this.palette) {
+            if (this.actionMode === 'nonMusician') {
+                this.generateNonMusicianGrid({ respectLocks: true, reshuffle: true });
+                this.buildPadGrid();
+            } else if (this.palette) {
                 // Randomize distribution and regenerate
                 this.palette.randomizeDistribution();
                 this.updateKnobLabels();
@@ -253,7 +274,10 @@ class GestaltApp {
         // Evolve unlocked gestures using locked references
         this.elements.evolveMotif.addEventListener('click', () => {
             console.log('[GestaltApp] Evolve button clicked');
-            if (this.palette) {
+            if (this.actionMode === 'nonMusician') {
+                this.generateNonMusicianGrid({ respectLocks: true, reshuffle: true, jitterVoicings: true });
+                this.buildPadGrid();
+            } else if (this.palette) {
                 this.palette.evolveUnlockedSlots();
                 this.updateKnobLabels();
                 this.buildPadGrid();
@@ -364,10 +388,10 @@ class GestaltApp {
     }
 
     /**
-     * Toggle action mode between motif (gestures) and musician (quantized notes)
+     * Toggle action mode between motif (gestures), musician (quantized notes), and non-musician (chord atlas)
      */
     setActionMode(mode) {
-        if (!['motif', 'musician'].includes(mode) || mode === this.actionMode) return;
+        if (!['motif', 'musician', 'nonMusician'].includes(mode) || mode === this.actionMode) return;
 
         this.actionMode = mode;
 
@@ -375,13 +399,19 @@ class GestaltApp {
             btn.classList.toggle('active', btn.dataset.mode === mode);
         });
 
+        this.engine?.allNotesOff();
+        this.activeNotesBySlot.clear();
+
         if (mode === 'musician') {
             this.elements.actionModeHint.textContent = 'Generate a patch and play the keyboard quantized to the selected scale.';
-            this.engine?.allNotesOff();
-            this.activeNotesBySlot.clear();
+        } else if (mode === 'nonMusician') {
+            this.elements.actionModeHint.textContent = 'Explore chords, dyads, and voicings from the selected key and mode.';
+            this.generateNonMusicianGrid({ respectLocks: true });
         } else {
             this.elements.actionModeHint.textContent = 'Generate and evolve gestural motifs on the grid.';
         }
+
+        this.elements.nonMusicianOctaveRow?.classList.toggle('hidden', mode !== 'nonMusician');
 
         this.buildPadGrid();
         this.updateActiveGestureDisplay(null);
@@ -426,12 +456,17 @@ class GestaltApp {
     updateHarmony() {
         if (!this.palette) return;
 
+        if (this.actionMode === 'nonMusician' && this.nonMusicianGrid.size === 0) {
+            this.generateNonMusicianGrid();
+        }
+
         const root = this.elements.rootNote.value;
         const scale = this.elements.scaleMode.value;
         
         console.log(`[GestaltApp] Updating harmony: ${root} ${scale}`);
 
         this.palette.setHarmony(root, scale);
+        this.generateNonMusicianGrid({ respectLocks: true });
         this.buildPadGrid();
     }
 
@@ -520,6 +555,208 @@ class GestaltApp {
     }
 
     /**
+     * Format a chord label using the chord type symbol
+     */
+    getChordLabel(rootMidi, chordType) {
+        const symbol = CHORD_TYPES[chordType]?.symbol || '';
+        const rootName = NOTE_NAMES[rootMidi % 12] || '?';
+        return `${rootName}${symbol}`;
+    }
+
+    /**
+     * Build a pool of chord and interval options for non-musician mode
+     */
+    buildNonMusicianChordPool() {
+        const root = this.elements.rootNote.value;
+        const scale = this.elements.scaleMode.value;
+        const diatonicChords = getDiatonicChords(root, scale, 3);
+
+        const pool = [];
+        const voicingNames = ['Closed', '1st Inv', '2nd Inv', 'Drop', 'Open', 'Double'];
+
+        const addChordVariant = (rootMidi, chordType, tag = '') => {
+            const baseNotes = buildChord(rootMidi, chordType);
+            const voicings = generateVoicings({ notes: baseNotes, type: chordType }, 6);
+            const label = this.getChordLabel(rootMidi, chordType);
+
+            voicings.forEach((notes, i) => {
+                pool.push({
+                    type: 'chord',
+                    label,
+                    chordType,
+                    description: `${tag || CHORD_TYPES[chordType]?.symbol || chordType}${voicingNames[i] ? ` • ${voicingNames[i]}` : ''}`.trim(),
+                    notes
+                });
+            });
+        };
+
+        const addDyads = (rootMidi) => {
+            const intervals = [3, 4, 7, 10, 14];
+            const intervalNames = { 3: 'm3', 4: 'M3', 7: '5th', 10: 'm7', 14: '9th' };
+
+            intervals.forEach(interval => {
+                const upper = rootMidi + interval;
+                const rootName = NOTE_NAMES[rootMidi % 12] || '?';
+                const upperName = NOTE_NAMES[upper % 12] || '?';
+                pool.push({
+                    type: 'chord',
+                    label: `${rootName}-${upperName}`,
+                    chordType: 'dyad',
+                    description: `Dyad • ${intervalNames[interval] || `${interval}st`}`,
+                    notes: [rootMidi, upper]
+                });
+            });
+        };
+
+        diatonicChords.forEach(chord => {
+            const rootMidi = chord.notes[0];
+
+            // Core triad
+            addChordVariant(rootMidi, chord.type, 'Triad');
+
+            // Extensions and colors
+            if (chord.type === 'major') {
+                addChordVariant(rootMidi, 'maj7', '7th');
+                addChordVariant(rootMidi, 'dom7', 'Dominant');
+                addChordVariant(rootMidi, 'add9', 'Add9');
+                addChordVariant(rootMidi, 'maj9', '9th');
+                addChordVariant(rootMidi, 'sus2', 'Suspended');
+                addChordVariant(rootMidi, 'sus4', 'Suspended');
+                addChordVariant(rootMidi, 'power', 'Power');
+            } else if (chord.type === 'minor') {
+                addChordVariant(rootMidi, 'minor', 'Triad');
+                addChordVariant(rootMidi, 'min7', '7th');
+                addChordVariant(rootMidi, 'madd9', 'Add9');
+                addChordVariant(rootMidi, 'min9', '9th');
+                addChordVariant(rootMidi, 'sus2', 'Suspended');
+                addChordVariant(rootMidi, 'sus4', 'Suspended');
+                addChordVariant(rootMidi, 'power', 'Power');
+            } else if (chord.type === 'dim') {
+                addChordVariant(rootMidi, 'dim', 'Triad');
+                addChordVariant(rootMidi, 'dim7', 'Fully Dim');
+                addChordVariant(rootMidi, 'min7b5', 'Half Dim');
+                addChordVariant(rootMidi, 'power', 'Power');
+            } else {
+                addChordVariant(rootMidi, chord.type, 'Triad');
+            }
+
+            addDyads(rootMidi);
+        });
+
+        return pool;
+    }
+
+    /**
+     * Build a bottom-row set of scale tones for non-musician mode
+     */
+    buildNonMusicianNoteRow() {
+        const root = this.elements.rootNote.value;
+        const scale = this.elements.scaleMode.value;
+        const scaleNotes = getScaleNotes(root, scale, this.nonMusicianOctave, this.nonMusicianOctave, 12, 120);
+
+        const row = [];
+        const fallbackNotes = scaleNotes.length ? scaleNotes : [60, 64, 67, 69, 72, 76, 79, 84];
+        for (let i = 0; i < 8; i++) {
+            row.push(fallbackNotes[i % fallbackNotes.length]);
+        }
+
+        return row;
+    }
+
+    /**
+     * Shuffle helper
+     */
+    shuffleArray(items) {
+        const array = [...items];
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+    }
+
+    /**
+     * Generate or refresh the non-musician grid contents
+     */
+    generateNonMusicianGrid({ respectLocks = false, reshuffle = false } = {}) {
+        const startSlot = this.gridStartSlot;
+        const previousGrid = new Map(this.nonMusicianGrid);
+
+        if (!respectLocks) {
+            this.lockedNonMusicianSlots.clear();
+        }
+
+        const noteRow = this.buildNonMusicianNoteRow();
+        const chordPool = reshuffle
+            ? this.shuffleArray(this.buildNonMusicianChordPool())
+            : this.buildNonMusicianChordPool();
+
+        if (!chordPool.length) return;
+
+        const newGrid = new Map();
+
+        // Bottom row: scale tones with octave selection
+        for (let col = 0; col < 8; col++) {
+            const slotId = startSlot + col;
+            const note = noteRow[col % noteRow.length];
+            newGrid.set(slotId, {
+                slotId,
+                type: 'note',
+                label: this.getNoteName(note),
+                description: `Scale note • ${this.getScaleLabel()} @${this.nonMusicianOctave}`,
+                notes: [note]
+            });
+        }
+
+        // Top 3 rows: chords, dyads, and voicings
+        const shuffled = this.shuffleArray(chordPool);
+        let poolIndex = 0;
+
+        for (let padIndex = 8; padIndex < 32; padIndex++) {
+            const slotId = startSlot + padIndex;
+
+            if (respectLocks && this.lockedNonMusicianSlots.has(slotId) && previousGrid.has(slotId)) {
+                newGrid.set(slotId, previousGrid.get(slotId));
+                continue;
+            }
+
+            if (poolIndex >= shuffled.length) {
+                poolIndex = 0;
+            }
+
+            const entry = { ...shuffled[poolIndex], slotId };
+            newGrid.set(slotId, entry);
+            poolIndex++;
+        }
+
+        this.nonMusicianGrid = newGrid;
+    }
+
+    /**
+     * Accessors for non-musician mode state
+     */
+    getNonMusicianEntry(slotId) {
+        if (this.nonMusicianGrid.size === 0) {
+            this.generateNonMusicianGrid();
+        }
+        return this.nonMusicianGrid.get(slotId);
+    }
+
+    isNonMusicianSlotLocked(slotId) {
+        return this.lockedNonMusicianSlots.has(slotId);
+    }
+
+    toggleNonMusicianLock(slotId) {
+        if (this.lockedNonMusicianSlots.has(slotId)) {
+            this.lockedNonMusicianSlots.delete(slotId);
+            return false;
+        }
+
+        this.lockedNonMusicianSlots.add(slotId);
+        return true;
+    }
+
+    /**
      * Update the active display for musician mode
      */
     updateMusicianDisplay(midiNote) {
@@ -529,6 +766,24 @@ class GestaltApp {
         this.elements.activeGestureInfo.innerHTML = `
             <span class="gesture-type">NOTE</span>
             <span class="gesture-notes">${noteName} • Quantized to ${scaleLabel}</span>
+        `;
+    }
+
+    /**
+     * Update the active display for non-musician mode
+     */
+    updateNonMusicianDisplay(entry) {
+        if (!entry) {
+            this.updateActiveGestureDisplay(null);
+            return;
+        }
+
+        const type = entry.type === 'chord' ? 'CHORD' : 'NOTE';
+        const detail = entry.description || `${entry.notes?.length || 0}-note voicing`;
+
+        this.elements.activeGestureInfo.innerHTML = `
+            <span class="gesture-type">${type}</span>
+            <span class="gesture-notes">${entry.label} • ${detail}</span>
         `;
     }
     
@@ -549,7 +804,11 @@ class GestaltApp {
      */
     buildPadGrid() {
         if (!this.palette) return;
-        
+
+        if (this.actionMode === 'nonMusician' && this.nonMusicianGrid.size === 0) {
+            this.generateNonMusicianGrid();
+        }
+
         console.log('[GestaltApp] Building pad grid...');
         
         this.elements.padGrid.innerHTML = '';
@@ -564,14 +823,19 @@ class GestaltApp {
                 const slotId = startSlot + padIndex;
                 const gesture = this.palette.getGesture(slotId);
                 const config = this.palette.getSlotConfig(slotId);
-                const isLocked = this.palette.isSlotLocked(slotId);
+                const nonMusicianEntry = this.actionMode === 'nonMusician'
+                    ? this.getNonMusicianEntry(slotId)
+                    : null;
+                const isLocked = this.actionMode === 'nonMusician'
+                    ? (nonMusicianEntry?.type === 'chord' && this.isNonMusicianSlotLocked(slotId))
+                    : this.palette.isSlotLocked(slotId);
 
                 const pad = document.createElement('div');
                 pad.className = 'pad';
                 pad.dataset.index = padIndex;
                 pad.dataset.slot = slotId;
 
-                pad.classList.toggle('locked', isLocked);
+                pad.classList.toggle('locked', Boolean(isLocked));
 
                 const padHeader = document.createElement('div');
                 padHeader.className = 'pad-header';
@@ -581,6 +845,8 @@ class GestaltApp {
                 if (this.actionMode === 'musician') {
                     const quantizedNote = this.quantizeSlot(slotId);
                     typeLabel.textContent = this.getNoteName(quantizedNote);
+                } else if (this.actionMode === 'nonMusician') {
+                    typeLabel.textContent = nonMusicianEntry?.label || '—';
                 } else {
                     typeLabel.textContent = gesture && config ? gesture.typeId : 'EMPTY';
                 }
@@ -588,12 +854,29 @@ class GestaltApp {
                 const lockBtn = document.createElement('button');
                 lockBtn.className = 'pad-lock-btn';
                 lockBtn.type = 'button';
+                const lockable = this.actionMode === 'nonMusician'
+                    ? nonMusicianEntry?.type === 'chord'
+                    : true;
+
+                lockBtn.disabled = !lockable;
+                lockBtn.classList.toggle('disabled', !lockable);
                 lockBtn.textContent = isLocked ? '🔒' : '🔓';
-                lockBtn.title = isLocked ? 'Unlock motif' : 'Lock motif';
+                lockBtn.title = this.actionMode === 'nonMusician'
+                    ? (lockable ? (isLocked ? 'Unlock chord' : 'Lock chord') : 'Locking disabled for scale notes')
+                    : (isLocked ? 'Unlock motif' : 'Lock motif');
 
                 lockBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     e.preventDefault();
+
+                    if (this.actionMode === 'nonMusician') {
+                        if (!lockable) return;
+                        const nowLocked = this.toggleNonMusicianLock(slotId);
+                        pad.classList.toggle('locked', nowLocked);
+                        lockBtn.textContent = nowLocked ? '🔒' : '🔓';
+                        lockBtn.title = nowLocked ? 'Unlock chord' : 'Lock chord';
+                        return;
+                    }
 
                     const nowLocked = this.palette.toggleSlotLock(slotId);
                     pad.classList.toggle('locked', nowLocked);
@@ -609,6 +892,8 @@ class GestaltApp {
                 if (this.actionMode === 'musician') {
                     const quantizedNote = this.quantizeSlot(slotId);
                     chordLabel.textContent = `Quantized • ${this.getScaleLabel()}`;
+                } else if (this.actionMode === 'nonMusician') {
+                    chordLabel.textContent = nonMusicianEntry?.description || '—';
                 } else {
                     chordLabel.textContent = gesture && config ? (gesture.display || '—') : '—';
                 }
@@ -675,6 +960,21 @@ class GestaltApp {
             return;
         }
 
+        if (this.actionMode === 'nonMusician') {
+            if (!this.engine) return;
+
+            const entry = this.getNonMusicianEntry(resolvedSlot);
+            if (!entry?.notes?.length) return;
+
+            const notes = Array.isArray(entry.notes) ? entry.notes : [entry.notes];
+            notes.forEach(note => this.engine.noteOn(note, velocity || 1));
+
+            this.activeNotesBySlot.set(resolvedSlot, notes);
+            this.updateActivePad(resolvedSlot, true);
+            this.updateNonMusicianDisplay(entry);
+            return;
+        }
+
         if (!this.player) {
             console.error('[GestaltApp] No player!');
             return;
@@ -711,6 +1011,21 @@ class GestaltApp {
             const note = this.activeNotesBySlot.get(resolvedSlot);
             if (note !== undefined && this.engine) {
                 this.engine.noteOff(note);
+            }
+
+            this.activeNotesBySlot.delete(resolvedSlot);
+            this.updateActivePad(resolvedSlot, false);
+
+            if (this.activeNotesBySlot.size === 0) {
+                this.updateActiveGestureDisplay(null);
+            }
+            return;
+        }
+
+        if (this.actionMode === 'nonMusician') {
+            const notes = this.activeNotesBySlot.get(resolvedSlot);
+            if (Array.isArray(notes) && this.engine) {
+                notes.forEach(note => this.engine.noteOff(note));
             }
 
             this.activeNotesBySlot.delete(resolvedSlot);
