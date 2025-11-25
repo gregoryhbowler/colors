@@ -7,12 +7,12 @@ import { midiToFreq } from './harmony.js';
  * Playback state for an active gesture
  */
 class GesturePlaybackState {
-    constructor(gesture, slotId, velocity, startTime) {
+    constructor(gesture, slotId, velocity, startTime, { forceOneShot = false } = {}) {
         this.gesture = gesture;
         this.slotId = slotId;
         this.velocity = velocity;
         this.startTime = startTime;
-        this.isLooping = gesture.loopLengthBeats !== null;
+        this.isLooping = !forceOneShot && gesture.loopLengthBeats !== null;
         this.loopCount = 0;
         this.scheduledNotes = []; // { time, note, velocity, duration }
         this.activeNotes = new Set(); // Currently sounding notes
@@ -60,7 +60,7 @@ export class EventGesturePlayer {
     /**
      * Trigger a gesture for a slot
      */
-    triggerSlot(slotId, velocity = 1) {
+    triggerSlot(slotId, velocity = 1, { forceOneShot = false } = {}) {
         if (!this.palette) {
             console.error('[EventGesturePlayer] No palette set');
             return null;
@@ -81,14 +81,14 @@ export class EventGesturePlayer {
         
         // Create playback state
         const startTime = performance.now();
-        const state = new GesturePlaybackState(gesture, slotId, velocity, startTime);
-        
+        const state = new GesturePlaybackState(gesture, slotId, velocity, startTime, { forceOneShot });
+
         this.activeGestures.set(slotId, state);
-        
+
         // Schedule all events
         this.scheduleGesture(state);
-        
-        return gesture;
+
+        return { gesture, isLooping: state.isLooping };
     }
     
     /**
