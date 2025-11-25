@@ -14,9 +14,9 @@ export class MIDIHandler {
         this.onConnectionChange = null;
         
         // Move MIDI mapping
-        // Pads: MIDI notes 36-67 (A2-G4) mapped to our 32 pads
-        // For Move, pads are typically notes 36-67 chromatically
-        this.padNoteOffset = 36; // A2
+        // Pads: MIDI notes 33-64 (A1-E4) mapped to our 32 pads
+        // For Move in chromatic mode, bottom-left is A1 (33)
+        this.padNoteOffset = 33; // A1 - FIXED from 36
         this.padCount = 32;
         
         // Knobs: CC 1-8 (or could be 21-28 depending on Move config)
@@ -127,6 +127,8 @@ export class MIDIHandler {
     handleNoteOn(note, velocity) {
         // Map MIDI note to pad index
         const padIndex = note - this.padNoteOffset;
+        
+        console.log(`MIDI Note On: ${note} -> Pad ${padIndex} (vel: ${velocity.toFixed(2)})`);
         
         if (padIndex >= 0 && padIndex < this.padCount) {
             if (this.onPadOn) {
