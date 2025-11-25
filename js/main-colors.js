@@ -744,73 +744,72 @@ class GestaltApp {
         }
 
         const engineType = this.engine.currentEngineType || this.currentEngineType || 'honey';
-        const voicePool = this.engine.voicePool;
+        const voiceState = this.engine.voices?.[0] || this.engine.voicePool?.[0];
+        const synth = voiceState?.synth || voiceState;
 
-        if (!voicePool || voicePool.length === 0) {
-            console.warn(`[GestaltApp] No voice pool for param ${paramName}`);
+        if (!synth) {
+            console.warn(`[GestaltApp] No synth available for param ${paramName}`);
             return undefined;
         }
 
-        const voice = voicePool[0];
-        
-        if (engineType === 'molly' && voice.params) {
-            return voice.params[paramName];
+        if (engineType === 'molly' && synth.params) {
+            return synth.params[paramName];
         } else if (engineType === 'vinegar') {
             if (paramName.startsWith('lfo') && !paramName.startsWith('lfo_')) {
-                return voice.lfo?.[paramName.replace('lfo', '').toLowerCase()] ?? 
-                       voice[paramName];
+                return synth.lfo?.[paramName.replace('lfo', '').toLowerCase()] ??
+                       synth[paramName];
             }
-            if (paramName.includes('envelope') || paramName === 'attack' || 
-                paramName === 'decay' || paramName === 'peak' || 
+            if (paramName.includes('envelope') || paramName === 'attack' ||
+                paramName === 'decay' || paramName === 'peak' ||
                 paramName === 'amp' || paramName === 'envType') {
-                return voice.envelope?.[paramName] ?? voice[paramName];
+                return synth.envelope?.[paramName] ?? synth[paramName];
             }
-            return voice[paramName];
+            return synth[paramName];
         } else if (engineType === 'honey') {
             if (paramName.startsWith('vcoA')) {
-                return voice.vcoA?.[paramName.replace('vcoA', '').charAt(0).toLowerCase() + 
-                                    paramName.replace('vcoA', '').slice(1)];
+                return synth.vcoA?.[paramName.replace('vcoA', '').charAt(0).toLowerCase() +
+                                     paramName.replace('vcoA', '').slice(1)];
             }
             if (paramName.startsWith('vcoB') || paramName === 'lfoRate') {
-                const key = paramName.replace('vcoB', '').charAt(0).toLowerCase() + 
+                const key = paramName.replace('vcoB', '').charAt(0).toLowerCase() +
                            paramName.replace('vcoB', '').slice(1);
-                return voice.vcoB?.[key] ?? voice.vcoB?.[paramName];
+                return synth.vcoB?.[key] ?? synth.vcoB?.[paramName];
             }
             if (paramName.startsWith('sub')) {
-                return voice.sub?.[paramName.replace('sub', '').charAt(0).toLowerCase() + 
-                                   paramName.replace('sub', '').slice(1)];
+                return synth.sub?.[paramName.replace('sub', '').charAt(0).toLowerCase() +
+                                    paramName.replace('sub', '').slice(1)];
             }
             if (paramName.startsWith('noise')) {
-                return voice.noise?.[paramName.replace('noise', '').charAt(0).toLowerCase() + 
-                                     paramName.replace('noise', '').slice(1)];
+                return synth.noise?.[paramName.replace('noise', '').charAt(0).toLowerCase() +
+                                      paramName.replace('noise', '').slice(1)];
             }
             if (paramName.startsWith('filter')) {
-                if (paramName === 'filterType') return voice.filter?.type;
-                if (paramName === 'filterFreq') return voice.filter?.frequency?.value;
-                if (paramName === 'filterRes') return voice.filter?.Q?.value;
-                const key = paramName.replace('filter', '').charAt(0).toLowerCase() + 
+                if (paramName === 'filterType') return synth.filter?.type;
+                if (paramName === 'filterFreq') return synth.filter?.frequency?.value;
+                if (paramName === 'filterRes') return synth.filter?.Q?.value;
+                const key = paramName.replace('filter', '').charAt(0).toLowerCase() +
                            paramName.replace('filter', '').slice(1);
-                return voice.filterMod?.[key];
+                return synth.filterMod?.[key];
             }
             if (paramName.startsWith('env')) {
-                if (paramName === 'envToFilter') return voice.filterMod?.envAmount;
-                if (paramName === 'envRate') return voice.envelope?.rateRange;
-                const key = paramName.replace('env', '').charAt(0).toLowerCase() + 
+                if (paramName === 'envToFilter') return synth.filterMod?.envAmount;
+                if (paramName === 'envRate') return synth.envelope?.rateRange;
+                const key = paramName.replace('env', '').charAt(0).toLowerCase() +
                            paramName.replace('env', '').slice(1);
-                return voice.envelope?.[key];
+                return synth.envelope?.[key];
             }
             if (paramName.startsWith('drive')) {
-                return voice.drive?.[paramName.replace('drive', '').charAt(0).toLowerCase() + 
-                                    paramName.replace('drive', '').slice(1)];
+                return synth.drive?.[paramName.replace('drive', '').charAt(0).toLowerCase() +
+                                     paramName.replace('drive', '').slice(1)];
             }
             if (paramName.startsWith('lfo')) {
-                const key = paramName.replace('lfo', '').charAt(0).toLowerCase() + 
+                const key = paramName.replace('lfo', '').charAt(0).toLowerCase() +
                            paramName.replace('lfo', '').slice(1);
-                return voice.lfoMod?.[key] ?? voice.lfoAmounts?.[key];
+                return synth.lfoMod?.[key] ?? synth.lfoAmounts?.[key];
             }
-            if (paramName === 'pulseWidth') return voice.vcoA?.pulseWidth;
-            if (paramName === 'pwmAmount') return voice.vcoA?.pwmAmount;
-            if (paramName === 'pwmSource') return voice.vcoA?.pwmSource;
+            if (paramName === 'pulseWidth') return synth.vcoA?.pulseWidth;
+            if (paramName === 'pwmAmount') return synth.vcoA?.pwmAmount;
+            if (paramName === 'pwmSource') return synth.vcoA?.pwmSource;
         }
         
         return undefined;
@@ -826,16 +825,24 @@ class GestaltApp {
         }
         
         const engineType = this.currentEngineType;
-        
+
         console.log(`[GestaltApp] Setting ${engineType} param ${paramName} = ${value}`);
-        
-        // For polyphonic engine, update all voices in the pool
-        if (this.engine.voicePool && Array.isArray(this.engine.voicePool)) {
+
+        if (typeof this.engine.setParam === 'function') {
+            this.engine.setParam(paramName, value);
+            const voiceCount = this.engine.voices?.length ?? 0;
+            console.log(`[GestaltApp] Engine applied param to ${voiceCount} voices`);
+            return;
+        }
+
+        const voices = this.engine.voices || this.engine.voicePool;
+        if (Array.isArray(voices)) {
             let successCount = 0;
-            this.engine.voicePool.forEach((voice, index) => {
+            voices.forEach((voiceState, index) => {
+                const synth = voiceState?.synth || voiceState;
                 try {
-                    if (voice && typeof voice.setParam === 'function') {
-                        voice.setParam(paramName, value);
+                    if (synth && typeof synth.setParam === 'function') {
+                        synth.setParam(paramName, value);
                         successCount++;
                     } else {
                         console.warn(`[GestaltApp] Voice ${index} missing setParam`);
@@ -844,9 +851,9 @@ class GestaltApp {
                     console.error(`[GestaltApp] Error on voice ${index}:`, error);
                 }
             });
-            console.log(`[GestaltApp] Updated ${successCount}/${this.engine.voicePool.length} voices`);
+            console.log(`[GestaltApp] Updated ${successCount}/${voices.length} voices`);
         } else {
-            console.error('[GestaltApp] Voice pool not found or not an array');
+            console.error('[GestaltApp] No voices available to set param');
         }
     }
 
