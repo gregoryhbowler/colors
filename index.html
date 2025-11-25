@@ -113,8 +113,13 @@
                 <div class="mode-toggle" id="actionModeToggle">
                     <button class="mode-btn active" data-mode="motif">MOTIF</button>
                     <button class="mode-btn" data-mode="musician">MUSICIAN</button>
+                    <button class="mode-btn" data-mode="nonMusician">NON-MUSICIAN</button>
                 </div>
                 <p class="mode-hint" id="actionModeHint">Generate and evolve gestural motifs on the grid.</p>
+                <div class="param-row hidden" id="nonMusicianOctaveRow">
+                    <label>Note Octave</label>
+                    <input type="number" id="nonMusicianOctave" min="1" max="7" value="3">
+                </div>
                 <button class="action-btn regenerate-btn" id="regenerateGestures">
                     <span class="btn-icon">◈</span> REGENERATE GRID
                 </button>
