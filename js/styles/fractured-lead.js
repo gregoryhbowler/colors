@@ -1,8 +1,8 @@
 // Fractured Lead Style — Aphex Twin / Oni Ayhun / Autechre
 // Short motif seeds with mutations, irregular rhythms, stutters, octave jumps
 
-import { StyleGenerator } from '../style-generator.js';
-import { Gesture, GestureEvent, SeededRandom } from '../gesture-core.js';
+import { StyleGenerator } from './style-generator.js';
+import { Gesture, GestureEvent, SeededRandom } from './gesture-core.js';
 
 export class FracturedLeadGenerator extends StyleGenerator {
     constructor() {

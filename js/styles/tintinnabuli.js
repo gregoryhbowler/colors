@@ -1,8 +1,8 @@
 // Arvo Pärt Style — Tintinnabuli
 // Two-voice counterpoint: melodic voice + tintinnabuli voice (closest chord tone)
 
-import { StyleGenerator } from '../style-generator.js';
-import { Gesture, GestureEvent, SeededRandom } from '../gesture-core.js';
+import { StyleGenerator } from './style-generator.js';
+import { Gesture, GestureEvent, SeededRandom } from './gesture-core.js';
 
 export class TintinnabuliGenerator extends StyleGenerator {
     constructor() {
