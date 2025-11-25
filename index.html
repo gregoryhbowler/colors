@@ -110,7 +110,11 @@
 
             <div class="panel-section">
                 <h2 class="section-title">ACTIONS</h2>
-                <div class="mode-badge">MOTIF</div>
+                <div class="mode-toggle" id="actionModeToggle">
+                    <button class="mode-btn active" data-mode="motif">MOTIF</button>
+                    <button class="mode-btn" data-mode="musician">MUSICIAN</button>
+                </div>
+                <p class="mode-hint" id="actionModeHint">Generate and evolve gestural motifs on the grid.</p>
                 <button class="action-btn regenerate-btn" id="regenerateGestures">
                     <span class="btn-icon">◈</span> REGENERATE GRID
                 </button>
